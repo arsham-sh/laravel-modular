@@ -1,0 +1,30 @@
+{
+    "name": "arsham/laravel-modular",
+    "description": "A Laravel module generator package",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "arsham-sh"
+        }
+    ],
+    "require": {
+        "illuminate/console": "^13.0",
+        "illuminate/filesystem": "^13.0",
+        "illuminate/support": "^13.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Arsham\\LaravelModular\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Arsham\\LaravelModular\\LaravelModularServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
