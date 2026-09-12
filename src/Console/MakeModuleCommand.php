@@ -10,11 +10,12 @@ class MakeModuleCommand extends Command
 {
     protected $signature = 'module:make
         {name : The name of the module}
-        {--components=* : Components to generate}
-        {--minimal : Generate only the core module components}
-        {--no-prompts : Skip interactive component selection}';
+        {--preset= : Generation preset: minimal, normal, or all}
+        {--components=* : Generate specific components instead of a preset}
+        {--minimal : Backward-compatible alias for --preset=minimal}
+        {--no-prompts : Skip interactive selection and use the normal preset}';
 
-    protected $description = 'Create a Laravel module with only the components you need';
+    protected $description = 'Create a Laravel module';
 
     /** @var array<string, string> */
     private array $paths = [
@@ -23,7 +24,7 @@ class MakeModuleCommand extends Command
         'models' => 'App/Models',
         'services' => 'App/Services',
         'resources' => 'App/Http/Resources',
-        'factories' => 'Database/Factories',
+        'database' => 'Database',
         'routes' => 'Routes',
         'middleware' => 'App/Http/Middleware',
         'console' => 'App/Console',
@@ -32,7 +33,13 @@ class MakeModuleCommand extends Command
     ];
 
     /** @var list<string> */
-    private array $coreComponents = ['controllers', 'requests', 'models', 'services', 'routes'];
+    private array $normalComponents = ['controllers', 'requests', 'models', 'services', 'routes'];
+
+    /** @var list<string> */
+    private array $allComponents = [
+        'controllers', 'requests', 'models', 'services', 'resources',
+        'database', 'routes', 'middleware', 'console', 'feature-tests', 'unit-tests',
+    ];
 
     /** @var array<string, string> */
     private array $componentLabels = [
@@ -41,7 +48,7 @@ class MakeModuleCommand extends Command
         'models' => 'Model',
         'services' => 'Service',
         'resources' => 'API resource',
-        'factories' => 'Factory',
+        'database' => 'Database (migration, factory, seeder)',
         'routes' => 'API routes',
         'middleware' => 'Middleware',
         'console' => 'Console command',
@@ -61,6 +68,7 @@ class MakeModuleCommand extends Command
         }
 
         $components = $this->components();
+
         if ($components === null) {
             return self::FAILURE;
         }
@@ -78,6 +86,7 @@ class MakeModuleCommand extends Command
         $this->createManifest($files, $modulePath, $name, $components);
 
         $this->info("Module [{$name}] created successfully.");
+
         return self::SUCCESS;
     }
 
@@ -95,29 +104,50 @@ class MakeModuleCommand extends Command
             return $this->validateComponents($components);
         }
 
-        if ($this->option('minimal') || $this->option('no-prompts') || ! $this->input->isInteractive()) {
-            return $this->coreComponents;
+        $preset = $this->option('preset');
+
+        if ($this->option('minimal')) {
+            $preset = 'minimal';
         }
 
-        $selected = $this->choice(
-            'Select the components for your module',
-            array_values($this->componentLabels),
-            null,
-            null,
-            true
+        if ($preset !== null) {
+            return $this->presetComponents($preset);
+        }
+
+        if ($this->option('no-prompts') || ! $this->input->isInteractive()) {
+            return $this->normalComponents;
+        }
+
+        $preset = $this->choice(
+            'How much should be generated?',
+            [
+                'minimal' => 'Minimal - module config, provider, and model only',
+                'normal' => 'Normal - controller, request, model, service, and API routes',
+                'all' => 'All - normal plus resources, database, middleware, console, and tests',
+            ],
+            'normal'
         );
 
-        $components = array_keys(array_filter(
-            $this->componentLabels,
-            static fn (string $label): bool => in_array($label, $selected, true)
-        ));
+        return $this->presetComponents($preset);
+    }
 
-        if ($components === []) {
-            $this->error('Select at least one component.');
-            return null;
-        }
+    /** Return the components for a named generation preset. */
+    private function presetComponents(string $preset): ?array
+    {
+        return match (Str::lower(trim($preset))) {
+            'minimal' => ['models'],
+            'normal' => $this->normalComponents,
+            'all' => $this->allComponents,
+            default => $this->invalidPreset($preset),
+        };
+    }
 
-        return $this->normalizeComponents($components);
+    /** Report an invalid preset. */
+    private function invalidPreset(string $preset): ?array
+    {
+        $this->error("Unknown preset [{$preset}]. Use minimal, normal, or all.");
+
+        return null;
     }
 
     /** Validate explicitly requested components. */
@@ -128,21 +158,23 @@ class MakeModuleCommand extends Command
         if ($invalid !== []) {
             $this->error('Unknown component(s): ' . implode(', ', $invalid));
             $this->line('Available: ' . implode(', ', array_keys($this->paths)));
+
             return null;
         }
 
         return $this->normalizeComponents($components);
     }
 
-    /** Add required components for selected components. */
+    /** Add required components for explicitly selected components. */
     private function normalizeComponents(array $components): array
     {
         if (in_array('controllers', $components, true)) {
             $components[] = 'models';
+            $components[] = 'requests';
             $components[] = 'routes';
         }
 
-        if (in_array('factories', $components, true)) {
+        if (in_array('resources', $components, true)) {
             $components[] = 'models';
         }
 
@@ -203,23 +235,26 @@ PHP;
         ];
 
         if (in_array('models', $components, true)) {
-            $factory = in_array('factories', $components, true);
             $this->writeTemplate($files, "{$modulePath}/App/Models/{$name}.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Models;
 
-__FACTORY_USE__use Illuminate\Database\Eloquent\Model;
-
+use Illuminate\Database\Eloquent\Model;
+__FACTORY_USE__
 class __NAME__ extends Model
 {
-__FACTORY_TRAIT__    /** The attributes that can be mass assigned. */
+__FACTORY_CODE__    /** The attributes that can be mass assigned. */
     protected $guarded = [];
 }
 PHP
             , $vars + [
-                '__FACTORY_USE__' => $factory ? "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\n" : '',
-                '__FACTORY_TRAIT__' => $factory ? "    use HasFactory;\n\n" : '',
+                '__FACTORY_USE__' => in_array('database', $components, true)
+                    ? "use Illuminate\\Database\\Eloquent\\Factories\\Factory;\nuse Illuminate\\Database\\Eloquent\\Factories\\HasFactory;"
+                    : '',
+                '__FACTORY_CODE__' => in_array('database', $components, true)
+                    ? "    use HasFactory;\n\n    /** Return the module's factory for this model. */\n    protected static function newFactory(): Factory\n    {\n        return \\{$namespace}\\Database\\Factories\\{$name}Factory::new();\n    }\n\n"
+                    : '',
             ]);
         }
 
@@ -289,37 +324,24 @@ PHP
             $this->createHttpResponsesTrait($files, $modulePath, $namespace);
         }
 
-        if (in_array('factories', $components, true)) {
-            $this->writeTemplate($files, "{$modulePath}/Database/Factories/{$name}Factory.php", <<<'PHP'
-<?php
-
-namespace __NS__\Database\Factories;
-
-use Illuminate\Database\Eloquent\Factories\Factory;
-use __NS__\App\Models\__NAME__;
-
-class __NAME__Factory extends Factory
-{
-    protected $model = __NAME__::class;
-
-    /** Define the model's default state. */
-    public function definition(): array
-    {
-        return [];
-    }
-}
-PHP
-            , $vars);
+        if (in_array('database', $components, true)) {
+            $this->createDatabase($files, $modulePath, $name, $namespace, $vars);
         }
 
-        if (in_array('routes', $components, true) && in_array('controllers', $components, true)) {
-            $this->writeTemplate($files, "{$modulePath}/Routes/api.php", <<<'PHP'
+        if (in_array('routes', $components, true)) {
+            $this->writeTemplate($files, "{$modulePath}/Routes/api.php", in_array('controllers', $components, true)
+                ? <<<'PHP'
 <?php
 
 use Illuminate\Support\Facades\Route;
 use __NS__\App\Http\Controllers\__NAME__Controller;
 
 Route::apiResource('__ROUTE__', __NAME__Controller::class);
+PHP
+                : <<<'PHP'
+<?php
+
+// Define module routes here.
 PHP
             , $vars);
         }
@@ -416,7 +438,80 @@ PHP
         }
     }
 
-    /** Generate a readable resource controller. */
+    /** Generate the database bundle for the module. */
+    private function createDatabase(Filesystem $files, string $modulePath, string $name, string $namespace, array $vars): void
+    {
+        $table = Str::snake(Str::pluralStudly($name));
+        $migration = date('Y_m_d_His') . '_create_' . $table . '_table.php';
+
+        $this->writeTemplate($files, "{$modulePath}/Database/Migrations/{$migration}", <<<'PHP'
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /** Run the migrations. */
+    public function up(): void
+    {
+        Schema::create('__TABLE__', function (Blueprint $table): void {
+            $table->id();
+            $table->timestamps();
+        });
+    }
+
+    /** Reverse the migrations. */
+    public function down(): void
+    {
+        Schema::dropIfExists('__TABLE__');
+    }
+};
+PHP
+        , ['__TABLE__' => $table]);
+
+        $this->writeTemplate($files, "{$modulePath}/Database/Factories/{$name}Factory.php", <<<'PHP'
+<?php
+
+namespace __NS__\Database\Factories;
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+use __NS__\App\Models\__NAME__;
+
+class __NAME__Factory extends Factory
+{
+    protected $model = __NAME__::class;
+
+    /** Define the model's default state. */
+    public function definition(): array
+    {
+        return [];
+    }
+}
+PHP
+        , $vars);
+
+        $this->writeTemplate($files, "{$modulePath}/Database/Seeders/{$name}Seeder.php", <<<'PHP'
+<?php
+
+namespace __NS__\Database\Seeders;
+
+use Illuminate\Database\Seeder;
+
+class __NAME__Seeder extends Seeder
+{
+    /** Seed the module database tables. */
+    public function run(): void
+    {
+        // Add module seed data here.
+    }
+}
+PHP
+        , $vars);
+    }
+
+    /** Generate a resource controller. */
     private function createController(Filesystem $files, string $modulePath, string $name, string $namespace, string $parameter, bool $resource): void
     {
         $resourceUse = $resource ? "use {$namespace}\\App\\Http\\Resources\\{$name}Resource;\n" : '';
@@ -434,7 +529,7 @@ PHP
 namespace __NS__\App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use __NS__\App\Http\Requests\__NAME__Request;
 __RESOURCE_USE__use __NS__\App\Models\__NAME__;
 use __NS__\App\Traits\HttpResponses;
 
@@ -449,9 +544,9 @@ class __NAME__Controller
     }
 
     /** Store a new resource. */
-    public function store(Request $request): JsonResponse
+    public function store(__NAME__Request $request): JsonResponse
     {
-        $model = __NAME__::create($request->all());
+        $model = __NAME__::create($request->validated());
 
         __STORE__
     }
@@ -463,9 +558,9 @@ class __NAME__Controller
     }
 
     /** Update an existing resource. */
-    public function update(Request $request, __NAME__ $__PARAM__): JsonResponse
+    public function update(__NAME__Request $request, __NAME__ $__PARAM__): JsonResponse
     {
-        $__PARAM__->update($request->all());
+        $__PARAM__->update($request->validated());
 
         return $this->success(__SHOW__, 'Updated successfully.');
     }
@@ -495,10 +590,11 @@ PHP
     /** Generate a shared JSON response helper for module controllers. */
     private function createHttpResponsesTrait(Filesystem $files, string $modulePath, string $namespace): void
     {
-        $traitPath = "{$modulePath}/App/Traits";
-        $files->makeDirectory($traitPath, 0755, true);
+        $path = "{$modulePath}/App/Traits/HttpResponses.php";
 
-        $this->writeFile($files, "{$traitPath}/HttpResponses.php", <<<PHP
+        $files->makeDirectory(dirname($path), 0755, true);
+
+        $this->writeFile($files, $path, <<<PHP
 <?php
 
 namespace {$namespace}\\App\\Traits;
@@ -565,6 +661,7 @@ PHP);
     /** Write generated contents to disk. */
     private function writeFile(Filesystem $files, string $path, string $contents): void
     {
+        $files->makeDirectory(dirname($path), 0755, true);
         $files->put($path, $contents);
     }
 }
