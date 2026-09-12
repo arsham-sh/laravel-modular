@@ -1,11 +1,11 @@
 # Laravel Modular
 
-A lightweight Laravel module generator for building modular Laravel applications without third-party module packages.
+A lightweight Laravel module generator for building modular Laravel applications without a third-party module package.
 
 ## Requirements
 
-* PHP 8.3+
-* Laravel 13
+- PHP 8.3+
+- Laravel 13
 
 ## Installation
 
@@ -15,38 +15,62 @@ Install the package via Composer:
 composer require arsham-sh/laravel-modular
 ```
 
-Laravel will automatically discover and register the package service provider.
+Laravel automatically discovers the package service provider.
 
 ## Usage
 
 ### Create a module
 
+Run the command normally to choose the components interactively:
+
 ```bash
 php artisan module:make Auth
 ```
 
-In interactive mode, the generator asks which preset to use:
+The generator presents the available components and lets you select one or more:
 
 ```text
-How much should be generated? [normal]:
-  [minimal] Minimal - model and request for a lightweight module
-  [normal] Normal - controller, request, model, service, and API routes
-  [all] All - normal plus resources, policies, database, middleware, console, and tests
+Which components should be generated?
+  [0] controllers
+  [1] requests
+  [2] models
+  [3] services
+  [4] resources
+  [5] policies
+  [6] database
+  [7] routes
+  [8] middleware
+  [9] console
+  [10] feature-tests
+  [11] unit-tests
+  [12] traits
 ```
 
-You can select a preset directly:
+You can also use a preset when you already know what you want:
 
 ```bash
-php artisan module:make Auth --preset=minimal
+php artisan module:make Auth --preset=basic
 php artisan module:make Auth --preset=normal
+php artisan module:make Auth --preset=advanced
 php artisan module:make Auth --preset=all
 ```
 
-`--minimal` is kept as a backward-compatible alias for `--preset=minimal`.
+Available presets:
+
+- `basic`: controllers, models, and API routes.
+- `normal`: controllers, models, database, and API routes.
+- `advanced`: normal plus form requests, services, and feature/unit tests.
+- `all`: advanced plus resources, policies, middleware, console, and all supported components.
+
+For non-interactive environments, use the normal preset explicitly:
+
+```bash
+php artisan module:make Auth --no-prompts
+```
 
 ### Select components explicitly
 
-For scripting or custom module layouts, generate specific components:
+For scripts or custom module layouts, generate specific components:
 
 ```bash
 php artisan module:make Auth \
@@ -55,13 +79,7 @@ php artisan module:make Auth \
     --components=routes
 ```
 
-Component dependencies are resolved automatically. For example, controllers pull in models, requests, and routes.
-
-For CI or other non-interactive environments, use the normal preset automatically with:
-
-```bash
-php artisan module:make Auth --no-prompts
-```
+Component dependencies are resolved automatically. For example, controllers require a model and routes, while services, resources, policies, and database generation also ensure the model is included.
 
 ### Generate a controller
 
@@ -77,11 +95,9 @@ For a resource-style controller:
 php artisan module:make-controller Auth User --resource
 ```
 
-The resource option creates `index`, `store`, `show`, `update`, and `destroy` methods.
-
 ## Generated module structure
 
-A normal module contains the common application pieces:
+A typical module contains only the components selected during generation:
 
 ```text
 Modules/
@@ -89,33 +105,32 @@ Modules/
     ├── App/
     │   ├── Http/
     │   │   ├── Controllers/AuthController.php
-    │   │   └── Requests/AuthRequest.php
+    │   │   └── Requests/
     │   ├── Models/Auth.php
     │   ├── Providers/AuthServiceProvider.php
-    │   └── Services/AuthService.php
+    │   └── Services/
     ├── Config/config.php
     ├── Routes/api.php
     └── module.json
 ```
 
-The `all` preset additionally generates resources, policies, database migrations/factories/seeders, middleware, a console command, and feature/unit tests.
+Additional selections can generate resources, policies, migrations and factories, middleware, console commands, traits, and application-level feature/unit tests.
 
 ## Development
 
-Install development dependencies and run the package test suite with:
+Install the package dependencies with:
 
 ```bash
 composer install
-composer test
 ```
 
-The tests cover preset definitions and component dependency resolution. Generated-module integration coverage is kept separate from the package's basic unit tests so the generator can be evolved without hiding filesystem/runtime failures.
+The package itself does not require generated-module tests. Test components are optional and are created inside the consuming Laravel application only when selected.
 
 ## Philosophy
 
 Laravel Modular keeps modules organized and independent while staying close to Laravel's native structure.
 
-The generator favors sensible presets and explicit component selection instead of forcing users through a long component checklist.
+The generator favors interactive component selection, explicit presets, and predictable component dependencies instead of silently generating an arbitrary module layout.
 
 It does not require a third-party modular architecture package.
 
