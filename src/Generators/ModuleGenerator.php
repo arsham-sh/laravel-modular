@@ -20,6 +20,7 @@ final class ModuleGenerator
         }
 
         $components = ModuleComponents::normalize($components);
+        $this->sharedSupport();
 
         try {
             $this->directory($root);
@@ -41,6 +42,56 @@ final class ModuleGenerator
 
             throw $e;
         }
+    }
+
+    private function sharedSupport(): void
+    {
+        $root = base_path('Modules/Shared');
+        $traitPath = "{$root}/App/Traits/HttpResponses.php";
+
+        if ($this->files->exists($traitPath)) {
+            return;
+        }
+
+        $this->directory("{$root}/App/Traits");
+        $this->file($traitPath, <<<'PHP'
+<?php
+
+namespace Modules\Shared\App\Traits;
+
+use Illuminate\Http\JsonResponse;
+
+trait HttpResponses
+{
+    protected function success(mixed $data = null, ?string $message = null, int $code = 200): JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'message' => $message,
+            'data' => $data,
+        ], $code);
+    }
+
+    protected function error(mixed $data = null, ?string $message = null, int $code = 500): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'message' => $message,
+            'data' => $data,
+        ], $code);
+    }
+}
+PHP);
+
+        $this->file("{$root}/module.json", json_encode([
+            'name' => 'Shared',
+            'namespace' => 'Modules\\Shared',
+            'provider' => null,
+            'version' => '1.0.0',
+            'description' => 'Shared module support',
+            'enabled' => true,
+            'components' => ['traits'],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
     }
 
     private function provider(string $root, string $name, array $components): void
@@ -103,23 +154,18 @@ PHP);
         if (in_array('models', $components, true)) {
             $this->model($root, $name, $variables, in_array('database', $components, true));
         }
-
         if (in_array('requests', $components, true)) {
             $this->requests($root, $name, $variables);
         }
-
         if (in_array('services', $components, true)) {
             $this->service($root, $name, $variables);
         }
-
         if (in_array('resources', $components, true)) {
             $this->resource($root, $name, $variables);
         }
-
         if (in_array('policies', $components, true)) {
             $this->policy($root, $name, $variables);
         }
-
         if (in_array('controllers', $components, true)) {
             if ($this->isBasic($components)) {
                 $this->basicController($root, $name, $variables);
@@ -129,27 +175,21 @@ PHP);
                 $this->normalController($root, $name, $variables, in_array('resources', $components, true));
             }
         }
-
         if (in_array('database', $components, true)) {
             $this->database($root, $name, $variables);
         }
-
         if (in_array('routes', $components, true)) {
             $this->routes($root, $name, $variables, $this->isBasic($components));
         }
-
         if (in_array('middleware', $components, true)) {
             $this->middleware($root, $name, $variables);
         }
-
         if (in_array('console', $components, true)) {
             $this->console($root, $name, $variables);
         }
-
         if (in_array('feature-tests', $components, true)) {
             $this->featureTest($root, $name, $variables);
         }
-
         if (in_array('unit-tests', $components, true)) {
             $this->unitTest($root, $name, $variables);
         }
@@ -157,9 +197,7 @@ PHP);
 
     private function model(string $root, string $name, array $variables, bool $database): void
     {
-        $imports = $database
-            ? "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\n"
-            : '';
+        $imports = $database ? "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\n" : '';
         $factory = $database ? "    use HasFactory;\n\n" : '';
 
         $this->template("{$root}/App/Models/{$name}.php", <<<'PHP'
@@ -183,16 +221,17 @@ PHP, $variables + [
 
     private function requests(string $root, string $name, array $variables): void
     {
-        $requestPath = "{$root}/App/Http/Requests";
+        $path = "{$root}/App/Http/Requests";
 
-        $this->template("{$requestPath}/Store{$name}Request.php", <<<'PHP'
+        foreach (['Store', 'Update'] as $type) {
+            $this->template("{$path}/{$type}{$name}Request.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class Store__NAME__Request extends FormRequest
+class __TYPE____NAME__Request extends FormRequest
 {
     public function authorize(): bool
     {
@@ -206,30 +245,8 @@ class Store__NAME__Request extends FormRequest
         ];
     }
 }
-PHP, $variables);
-
-        $this->template("{$requestPath}/Update{$name}Request.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Http\Requests;
-
-use Illuminate\Foundation\Http\FormRequest;
-
-class Update__NAME__Request extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        return [
-            'name' => ['required', 'string', 'max:255'],
-        ];
-    }
-}
-PHP, $variables);
+PHP, $variables + ['__TYPE__' => $type]);
+        }
     }
 
     private function service(string $root, string $name, array $variables): void
@@ -305,30 +322,11 @@ use Illuminate\Contracts\Auth\Authenticatable;
 
 final class __NAME__Policy
 {
-    public function viewAny(Authenticatable $user): bool
-    {
-        return true;
-    }
-
-    public function view(Authenticatable $user, __NAME__ $__PARAM__): bool
-    {
-        return true;
-    }
-
-    public function create(Authenticatable $user): bool
-    {
-        return true;
-    }
-
-    public function update(Authenticatable $user, __NAME__ $__PARAM__): bool
-    {
-        return true;
-    }
-
-    public function delete(Authenticatable $user, __NAME__ $__PARAM__): bool
-    {
-        return true;
-    }
+    public function viewAny(Authenticatable $user): bool { return true; }
+    public function view(Authenticatable $user, __NAME__ $__PARAM__): bool { return true; }
+    public function create(Authenticatable $user): bool { return true; }
+    public function update(Authenticatable $user, __NAME__ $__PARAM__): bool { return true; }
+    public function delete(Authenticatable $user, __NAME__ $__PARAM__): bool { return true; }
 }
 PHP, $variables);
     }
@@ -341,21 +339,24 @@ PHP, $variables);
 namespace __NS__\App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Modules\Shared\App\Traits\HttpResponses;
 
 final class __NAME__Controller
 {
-    public function index(): array
+    use HttpResponses;
+
+    public function index()
     {
-        return [
+        return $this->success([
             'message' => '__NAME__ module is working.',
-        ];
+        ]);
     }
 
-    public function store(Request $request): array
+    public function store(Request $request)
     {
-        return $request->validate([
+        return $this->success($request->validate([
             'name' => ['required', 'string', 'max:255'],
-        ]);
+        ]));
     }
 }
 PHP, $variables);
@@ -363,14 +364,9 @@ PHP, $variables);
 
     private function normalController(string $root, string $name, array $variables, bool $resource): void
     {
-        $resourceImport = $resource
-            ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n"
-            : '';
-        $index = $resource
-            ? '__NAME__Resource::collection(__NAME__::query()->paginate())'
-            : '__NAME__::query()->paginate()';
+        $resourceImport = $resource ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n" : '';
+        $index = $resource ? '__NAME__Resource::collection(__NAME__::query()->paginate())' : '__NAME__::query()->paginate()';
         $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
-        $store = $resource ? 'new __NAME__Resource($' . Str::camel($name) . ')' : '$' . Str::camel($name);
 
         $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
 <?php
@@ -379,73 +375,73 @@ namespace __NS__\App\Http\Controllers;
 
 use __NS__\App\Models\__NAME__;
 use Illuminate\Http\Request;
+use Modules\Shared\App\Traits\HttpResponses;
 __RESOURCE_IMPORT__
 final class __NAME__Controller
 {
+    use HttpResponses;
+
     public function index()
     {
-        return __INDEX__;
+        return $this->success(['__PARAM__s' => __INDEX__]);
     }
 
     public function store(Request $request)
     {
         $__PARAM__ = __NAME__::create($request->all());
 
-        return __STORE__;
+        return $this->success(['__PARAM__' => $__PARAM__], '__NAME__ created successfully', 201);
     }
 
     public function show(__NAME__ $__PARAM__)
     {
-        return __SHOW__;
+        return $this->success(['__PARAM__' => __SHOW__]);
     }
 
     public function update(Request $request, __NAME__ $__PARAM__)
     {
         $__PARAM__->update($request->all());
 
-        return $__PARAM__->fresh();
+        return $this->success(['__PARAM__' => $__PARAM__->fresh()], '__NAME__ updated successfully');
     }
 
     public function destroy(__NAME__ $__PARAM__)
     {
         $__PARAM__->delete();
 
-        return response()->noContent();
+        return $this->success(null, '__NAME__ deleted successfully');
     }
 }
 PHP, $variables + [
             '__RESOURCE_IMPORT__' => $resourceImport,
             '__INDEX__' => str_replace('__NAME__', $name, $index),
             '__SHOW__' => str_replace('__NAME__', $name, $show),
-            '__STORE__' => str_replace('__NAME__', $name, $store),
         ]);
     }
 
     private function serviceController(string $root, string $name, array $variables, bool $resource): void
     {
-        $resourceImport = $resource
-            ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n"
-            : '';
-        $index = $resource
-            ? '__NAME__Resource::collection($this->service->paginate())'
-            : '$this->service->paginate()';
+        $resourceImport = $resource ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n" : '';
+        $index = $resource ? '__NAME__Resource::collection($this->service->paginate())' : '$this->service->paginate()';
         $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
-        $created = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
-        $updated = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
+        $created = $resource ? 'new __NAME__Resource($this->service->create($request->validated()))' : '$this->service->create($request->validated())';
+        $updated = $resource ? 'new __NAME__Resource($this->service->update($__PARAM__, $request->validated()))' : '$this->service->update($__PARAM__, $request->validated())';
 
         $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Controllers;
 
-use Illuminate\Http\Response;
 use __NS__\App\Http\Requests\Store__NAME__Request;
 use __NS__\App\Http\Requests\Update__NAME__Request;
 use __NS__\App\Models\__NAME__;
 use __NS__\App\Services\__NAME__Service;
+use Modules\Shared\App\Traits\HttpResponses;
 __RESOURCE_IMPORT__
 final class __NAME__Controller
 {
+    use HttpResponses;
+
     public function __construct(
         private readonly __NAME__Service $service,
     ) {
@@ -453,29 +449,47 @@ final class __NAME__Controller
 
     public function index()
     {
-        return __INDEX__;
+        $__PARAM__s = $this->service->paginate();
+
+        return $this->success(['__PARAM__s' => __INDEX__]);
     }
 
     public function store(Store__NAME__Request $request)
     {
-        return __CREATED__;
+        $__PARAM__ = __CREATED__;
+
+        return $this->success(
+            ['__PARAM__' => $__PARAM__],
+            '__NAME__ created successfully',
+            201
+        );
     }
 
     public function show(__NAME__ $__PARAM__)
     {
-        return __SHOW__;
+        return $this->success([
+            '__PARAM__' => __SHOW__,
+        ]);
     }
 
     public function update(Update__NAME__Request $request, __NAME__ $__PARAM__)
     {
-        return __UPDATED__;
+        $__PARAM__ = __UPDATED__;
+
+        return $this->success(
+            ['__PARAM__' => $__PARAM__],
+            '__NAME__ updated successfully'
+        );
     }
 
-    public function destroy(__NAME__ $__PARAM__): Response
+    public function destroy(__NAME__ $__PARAM__)
     {
         $this->service->delete($__PARAM__);
 
-        return response()->noContent();
+        return $this->success(
+            null,
+            '__NAME__ deleted successfully'
+        );
     }
 }
 PHP, $variables + [
@@ -485,40 +499,21 @@ PHP, $variables + [
             '__CREATED__' => str_replace('__NAME__', $name, $created),
             '__UPDATED__' => str_replace('__NAME__', $name, $updated),
         ]);
-
-        $controllerPath = "{$root}/App/Http/Controllers/{$name}Controller.php";
-        $content = $this->files->get($controllerPath);
-        $content = str_replace(
-            'return __CREATED__;',
-            $resource ? 'return new __NAME__Resource($this->service->create($request->validated()));' : 'return $this->service->create($request->validated());',
-            $content
-        );
-        $content = str_replace(
-            'return __UPDATED__; ',
-            $resource ? 'return new __NAME__Resource($this->service->update($__PARAM__, $request->validated()));' : 'return $this->service->update($__PARAM__, $request->validated());',
-            $content
-        );
-        $content = str_replace('__NAME__', $name, $content);
-        $content = str_replace('$__PARAM__', '$' . Str::camel($name), $content);
-        $this->files->put($controllerPath, $content);
     }
 
     private function routes(string $root, string $name, array $variables, bool $basic): void
     {
-        $controller = "use __NS__\\App\\Http\\Controllers\\__NAME__Controller;\n";
-        $routes = $basic
-            ? "Route::get('__ROUTE__', [__NAME__Controller::class, 'index']);\nRoute::post('__ROUTE__', [__NAME__Controller::class, 'store']);"
-            : "Route::apiResource('__ROUTE__', __NAME__Controller::class);";
-
         $this->template("{$root}/Routes/api.php", <<<'PHP'
 <?php
 
 use Illuminate\Support\Facades\Route;
-__CONTROLLER_IMPORT__
+use __NS__\App\Http\Controllers\__NAME__Controller;
+
 __ROUTES__
 PHP, $variables + [
-            '__CONTROLLER_IMPORT__' => $controller,
-            '__ROUTES__' => $routes,
+            '__ROUTES__' => $basic
+                ? "Route::get('__ROUTE__', [__NAME__Controller::class, 'index']);\nRoute::post('__ROUTE__', [__NAME__Controller::class, 'store']);"
+                : "Route::apiResource('__ROUTE__', __NAME__Controller::class);",
         ]);
     }
 
@@ -526,7 +521,6 @@ PHP, $variables + [
     {
         $table = Str::snake(Str::pluralStudly($name));
         $timestamp = date('Y_m_d_His');
-        $migrationVariables = ['__TABLE__' => $table];
 
         $this->template("{$root}/Database/Migrations/{$timestamp}_create_{$table}_table.php", <<<'PHP'
 <?php
@@ -551,7 +545,7 @@ return new class extends Migration
         Schema::dropIfExists('__TABLE__');
     }
 };
-PHP, $migrationVariables);
+PHP, ['__TABLE__' => $table]);
 
         $this->template("{$root}/Database/Factories/{$name}Factory.php", <<<'PHP'
 <?php
@@ -663,7 +657,7 @@ class __NAME__Test extends TestCase
     public function test_store_creates_a_record(): void
     {
         $this->postJson('/__ROUTE__', ['name' => 'New record'])
-            ->assertSuccessful()
+            ->assertCreated()
             ->assertJsonFragment(['name' => 'New record']);
 
         $this->assertDatabaseHas('__TABLE__', ['name' => 'New record']);
@@ -682,7 +676,7 @@ class __NAME__Test extends TestCase
             ->assertJsonFragment(['name' => 'Updated']);
 
         $this->deleteJson("/__ROUTE__/{$model->id}")
-            ->assertNoContent();
+            ->assertSuccessful();
 
         $this->assertDatabaseMissing('__TABLE__', ['id' => $model->id]);
     }
@@ -730,19 +724,17 @@ PHP, $variables + ['__TABLE__' => Str::snake(Str::pluralStudly($name))]);
 
     private function manifest(string $root, string $name, array $components): void
     {
-        $data = [
-            'name' => $name,
-            'namespace' => "Modules\\{$name}",
-            'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
-            'version' => '1.0.0',
-            'description' => "{$name} module",
-            'enabled' => true,
-            'components' => $components,
-        ];
-
         $this->file(
             "{$root}/module.json",
-            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL
+            json_encode([
+                'name' => $name,
+                'namespace' => "Modules\\{$name}",
+                'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
+                'version' => '1.0.0',
+                'description' => "{$name} module",
+                'enabled' => true,
+                'components' => $components,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL
         );
     }
 
