@@ -495,7 +495,10 @@ PHP
     /** Generate a shared JSON response helper for module controllers. */
     private function createHttpResponsesTrait(Filesystem $files, string $modulePath, string $namespace): void
     {
-        $this->writeFile($files, "{$modulePath}/App/Traits/HttpResponses.php", <<<PHP
+        $traitPath = "{$modulePath}/App/Traits";
+        $files->makeDirectory($traitPath, 0755, true);
+
+        $this->writeFile($files, "{$traitPath}/HttpResponses.php", <<<PHP
 <?php
 
 namespace {$namespace}\\App\\Traits;
