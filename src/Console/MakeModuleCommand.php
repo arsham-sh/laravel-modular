@@ -27,7 +27,7 @@ class MakeModuleCommand extends Command
     ];
 
     private array $presetDescriptions = [
-        'minimal' => 'Minimal - module config, provider, model, and basic module structure',
+        'minimal' => 'Minimal - model and request for a lightweight module',
         'normal' => 'Normal - controller, request, model, service, and API routes',
         'all' => 'All - normal plus resources, policies, database, middleware, console, and tests',
     ];
@@ -90,24 +90,19 @@ class MakeModuleCommand extends Command
             return $this->normalComponents;
         }
 
-        $choice = $this->choice(
+        $preset = $this->choice(
             'How much should be generated?',
-            array_values($this->presetDescriptions),
-            1,
-            null,
-            true
+            $this->presetDescriptions,
+            'normal'
         );
 
-        $descriptions = array_values($this->presetDescriptions);
-        $selected = array_search($choice, $descriptions, true);
-
-        return $this->presetComponents(array_keys($this->presetDescriptions)[$selected] ?? 'normal');
+        return $this->presetComponents($preset);
     }
 
     private function presetComponents(string $preset): ?array
     {
         return match (Str::lower(trim($preset))) {
-            'minimal' => ['models'],
+            'minimal' => ['models', 'requests'],
             'normal' => $this->normalComponents,
             'all' => $this->allComponents,
             default => $this->invalidPreset($preset),
