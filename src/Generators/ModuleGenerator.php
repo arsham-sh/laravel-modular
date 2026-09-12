@@ -243,6 +243,11 @@ use __NS__\App\Models\__NAME__;
 
 final class __NAME__Service
 {
+    public function paginate()
+    {
+        return __NAME__::query()->paginate();
+    }
+
     public function create(array $data): __NAME__
     {
         return __NAME__::create($data);
@@ -425,14 +430,15 @@ PHP, $variables + [
             ? '__NAME__Resource::collection($this->service->paginate())'
             : '$this->service->paginate()';
         $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
-        $created = $resource ? 'new __NAME__Resource($' . Str::camel($name) . ')' : '$' . Str::camel($name);
-        $updated = $resource ? 'new __NAME__Resource($' . Str::camel($name) . ')' : '$' . Str::camel($name);
+        $created = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
+        $updated = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
 
         $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Controllers;
 
+use Illuminate\Http\Response;
 use __NS__\App\Http\Requests\Store__NAME__Request;
 use __NS__\App\Http\Requests\Update__NAME__Request;
 use __NS__\App\Models\__NAME__;
@@ -452,8 +458,6 @@ final class __NAME__Controller
 
     public function store(Store__NAME__Request $request)
     {
-        $__PARAM__ = $this->service->create($request->validated());
-
         return __CREATED__;
     }
 
@@ -464,12 +468,10 @@ final class __NAME__Controller
 
     public function update(Update__NAME__Request $request, __NAME__ $__PARAM__)
     {
-        $__PARAM__ = $this->service->update($__PARAM__, $request->validated());
-
         return __UPDATED__;
     }
 
-    public function destroy(__NAME__ $__PARAM__)
+    public function destroy(__NAME__ $__PARAM__): Response
     {
         $this->service->delete($__PARAM__);
 
@@ -483,6 +485,22 @@ PHP, $variables + [
             '__CREATED__' => str_replace('__NAME__', $name, $created),
             '__UPDATED__' => str_replace('__NAME__', $name, $updated),
         ]);
+
+        $controllerPath = "{$root}/App/Http/Controllers/{$name}Controller.php";
+        $content = $this->files->get($controllerPath);
+        $content = str_replace(
+            'return __CREATED__;',
+            $resource ? 'return new __NAME__Resource($this->service->create($request->validated()));' : 'return $this->service->create($request->validated());',
+            $content
+        );
+        $content = str_replace(
+            'return __UPDATED__; ',
+            $resource ? 'return new __NAME__Resource($this->service->update($__PARAM__, $request->validated()));' : 'return $this->service->update($__PARAM__, $request->validated());',
+            $content
+        );
+        $content = str_replace('__NAME__', $name, $content);
+        $content = str_replace('$__PARAM__', '$' . Str::camel($name), $content);
+        $this->files->put($controllerPath, $content);
     }
 
     private function routes(string $root, string $name, array $variables, bool $basic): void
