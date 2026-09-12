@@ -14,7 +14,7 @@ enum ModulePreset: string
         return match ($this) {
             self::Basic => 'Basic - controller, provider, config, and API routes',
             self::Normal => 'Normal - database-backed CRUD with a simple controller',
-            self::Advanced => 'Advanced - normal plus form requests, service, and feature tests',
+            self::Advanced => 'Advanced - normal plus form requests, service, feature tests, and unit tests',
             self::All => 'All - advanced plus resources, policies, database, middleware, console, and tests',
         };
     }
@@ -28,7 +28,7 @@ enum ModulePreset: string
             ],
             self::Advanced => [
                 'controllers', 'requests', 'models', 'services', 'database', 'routes',
-                'feature-tests',
+                'feature-tests', 'unit-tests',
             ],
             self::All => [
                 'controllers', 'requests', 'models', 'services', 'resources', 'policies',
