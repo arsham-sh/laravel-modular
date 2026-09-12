@@ -20,11 +20,11 @@ final class ModuleGenerator
         }
 
         $components = ModuleComponents::normalize($components);
+
         try {
             $this->directory($root);
             $this->directory("{$root}/Config");
             $this->directory("{$root}/App/Providers");
-
             foreach ($components as $component) {
                 $this->directory("{$root}/" . ModuleComponents::PATHS[$component]);
             }
@@ -54,19 +54,20 @@ final class ModuleGenerator
         if (in_array('policies', $components, true)) {
             $boot[] = "        Gate::policy(\\{$ns}\\App\\Models\\{$name}::class, \\{$ns}\\App\\Policies\\{$name}Policy::class);";
         }
-        $commands = in_array('console', $components, true)
-            ? "\n        \$this->commands([\\{$ns}\\App\\Console\\{$name}Command::class]);"
-            : '';
-        $imports = in_array('policies', $components, true) ? "use Illuminate\\Support\\Facades\\Gate;\n" : '';
+        if (in_array('console', $components, true)) {
+            $boot[] = "        \$this->commands([\\{$ns}\\App\\Console\\{$name}Command::class]);";
+        }
 
-        $body = implode("\n", $boot);
+        $imports = in_array('policies', $components, true)
+            ? "\nuse Illuminate\\Support\\Facades\\Gate;\n"
+            : '';
+
         $this->file("{$root}/App/Providers/{$name}ServiceProvider.php", <<<PHP
 <?php
 
 namespace {$ns}\\App\\Providers;
 
-use Illuminate\\Support\\ServiceProvider;
-{$imports}
+use Illuminate\\Support\\ServiceProvider;{$imports}
 class {$name}ServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -76,8 +77,7 @@ class {$name}ServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-{$body}{$commands}
-    }
+{$this->lines($boot)}    }
 }
 PHP);
     }
@@ -179,6 +179,7 @@ PHP, $v);
 
         if (in_array('controllers', $components, true)) {
             $this->controller($root, $name, $ns, $param, in_array('resources', $components, true));
+            $this->responses($root, $ns);
         }
 
         if (in_array('database', $components, true)) {
@@ -240,13 +241,16 @@ PHP, $v);
 
 namespace __NS__\Tests\Feature;
 
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class __NAME__Test extends TestCase
 {
-    public function test_module_route_is_registered(): void
+    public function test_module_routes_are_registered(): void
     {
-        $this->assertTrue(true);
+        $route = Route::getRoutes()->getByName('__ROUTE__.index');
+        $this->assertNotNull($route);
+        $this->assertSame('/__ROUTE__', $route->uri());
     }
 }
 PHP, $v);
@@ -285,41 +289,68 @@ namespace __NS__\App\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use __NS__\App\Http\Requests\__NAME__Request;
 __RESOURCE__use __NS__\App\Models\__NAME__;
+use __NS__\App\Traits\HttpResponses;
 
 class __NAME__Controller
 {
+    use HttpResponses;
+
     public function index(): JsonResponse
     {
-        return response()->json(__INDEX__);
+        return $this->success(__INDEX__);
     }
 
     public function store(__NAME__Request $request): JsonResponse
     {
         $model = __NAME__::create($request->validated());
-        return response()->json($model, 201);
+        return $this->success($model, 'Created successfully.', 201);
     }
 
     public function show(__NAME__ $__PARAM__): JsonResponse
     {
-        return response()->json(__SHOW__);
+        return $this->success(__SHOW__);
     }
 
     public function update(__NAME__Request $request, __NAME__ $__PARAM__): JsonResponse
     {
         $__PARAM__->update($request->validated());
-        return response()->json(__SHOW__);
+        return $this->success(__SHOW__, 'Updated successfully.');
     }
 
     public function destroy(__NAME__ $__PARAM__): JsonResponse
     {
         $__PARAM__->delete();
-        return response()->noContent();
+        return $this->success(null, 'Deleted successfully.');
     }
 }
 PHP, [
             '__NS__' => $ns, '__NAME__' => $name, '__PARAM__' => $param,
             '__RESOURCE__' => $resourceUse, '__INDEX__' => $index, '__SHOW__' => $show,
         ]);
+    }
+
+    private function responses(string $root, string $ns): void
+    {
+        $this->template("{$root}/App/Traits/HttpResponses.php", <<<'PHP'
+<?php
+
+namespace __NS__\App\Traits;
+
+use Illuminate\Http\JsonResponse;
+
+trait HttpResponses
+{
+    protected function success(mixed $data = null, ?string $message = null, int $code = 200): JsonResponse
+    {
+        return response()->json(['status' => 'success', 'message' => $message, 'data' => $data], $code);
+    }
+
+    protected function error(mixed $data = null, ?string $message = null, int $code = 500): JsonResponse
+    {
+        return response()->json(['status' => 'error', 'message' => $message, 'data' => $data], $code);
+    }
+}
+PHP, ['__NS__' => $ns]);
     }
 
     private function database(string $root, string $name, string $ns, array $v): void
@@ -398,9 +429,11 @@ PHP, $v);
         $this->file("{$root}/module.json", json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
     }
 
-    private function configKey(string $name): string
+    private function configKey(string $name): string { return Str::kebab($name); }
+
+    private function lines(array $lines): string
     {
-        return Str::kebab($name);
+        return $lines === [] ? '' : implode("\n", $lines) . "\n";
     }
 
     private function template(string $path, string $content, array $variables): void
