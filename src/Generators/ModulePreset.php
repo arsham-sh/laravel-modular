@@ -4,15 +4,15 @@ namespace Arsham\LaravelModular\Generators;
 
 enum ModulePreset: string
 {
-    case Minimal = 'minimal';
+    case Basic = 'basic';
     case Normal = 'normal';
     case All = 'all';
 
     public function description(): string
     {
         return match ($this) {
-            self::Minimal => 'Minimal - model and request for a lightweight module',
-            self::Normal => 'Normal - controller, request, model, service, and API routes',
+            self::Basic => 'Basic - controller, provider, config, and API routes',
+            self::Normal => 'Normal - database-backed CRUD module with request, model, service, and API routes',
             self::All => 'All - normal plus resources, policies, database, middleware, console, and tests',
         };
     }
@@ -20,8 +20,8 @@ enum ModulePreset: string
     public function components(): array
     {
         return match ($this) {
-            self::Minimal => ['models', 'requests'],
-            self::Normal => ['controllers', 'requests', 'models', 'services', 'routes'],
+            self::Basic => ['controllers', 'routes'],
+            self::Normal => ['controllers', 'requests', 'models', 'services', 'database', 'routes'],
             self::All => [
                 'controllers', 'requests', 'models', 'services', 'resources', 'policies',
                 'database', 'routes', 'middleware', 'console', 'feature-tests', 'unit-tests',
