@@ -114,13 +114,17 @@ class MakeModuleCommand extends Command
     {
         $boot = '';
         if (in_array('routes', $components, true)) {
-            $boot .= "        \\$this->loadRoutesFrom(__DIR__ . '/../../Routes/api.php');\n";
+            $boot .= '        $this->loadRoutesFrom(__DIR__ . \'/../../Routes/api.php\');' . PHP_EOL;
         }
         if (in_array('migrations', $components, true)) {
-            $boot .= "        \\$this->loadMigrationsFrom(__DIR__ . '/../../Database/Migrations');\n";
+            $boot .= '        $this->loadMigrationsFrom(__DIR__ . \'/../../Database/Migrations\');' . PHP_EOL;
         }
 
-        $content = "<?php\n\nnamespace Modules\\{$name}\\App\\Providers;\n\nuse Illuminate\\Support\\ServiceProvider;\n\nclass {$name}ServiceProvider extends ServiceProvider\n{\n    public function register(): void\n    {\n        \\$this->mergeConfigFrom(__DIR__ . '/../../Config/config.php', '" . Str::kebab($name) . "');\n    }\n\n    public function boot(): void\n    {\n{$boot}    }\n}\n";
+        $configKey = Str::kebab($name);
+        $content = "<?php\n\nnamespace Modules\\{$name}\\App\\Providers;\n\nuse Illuminate\\Support\\ServiceProvider;\n\nclass {$name}ServiceProvider extends ServiceProvider\n{\n    public function register(): void\n    {\n";
+        $content .= '        $this->mergeConfigFrom(__DIR__ . \'/../../Config/config.php\', ' . var_export($configKey, true) . ');' . PHP_EOL;
+        $content .= "    }\n\n    public function boot(): void\n    {\n{$boot}    }\n}\n";
+
         $this->put($files, "{$modulePath}/App/Providers/{$name}ServiceProvider.php", $content);
     }
 
@@ -161,7 +165,7 @@ class MakeModuleCommand extends Command
                 ? "return response()->json(new {$name}Resource(\$model), 201);"
                 : "return response()->json(\$model, 201);";
             $show = $resource ? "new {$name}Resource(\${$param})" : "\${$param}";
-            $this->put($files, "{$modulePath}/App/Http/Controllers/{$name}Controller.php", "<?php\n\nnamespace {$ns}\\App\\Http\\Controllers;\n\nuse Illuminate\\Http\\JsonResponse;\nuse Illuminate\\Http\\Request;\n{$resourceUse}use {$ns}\\App\\Models\\{$name};\n\nclass {$name}Controller\n{\n    public function index(): JsonResponse\n    {\n        return response()->json({$index});\n    }\n\n    public function store(Request \\$request): JsonResponse\n    {\n        \\$model = {$name}::create(\\$request->all());\n        {$store}\n    }\n\n    public function show({$name} \\${$param}): JsonResponse\n    {\n        return response()->json({$show});\n    }\n\n    public function update(Request \\$request, {$name} \\${$param}): JsonResponse\n    {\n        \\${$param}->update(\\$request->all());\n        return response()->json({$show});\n    }\n\n    public function destroy({$name} \\${$param}): JsonResponse\n    {\n        \\${$param}->delete();\n        return response()->noContent();\n    }\n}\n");
+            $this->put($files, "{$modulePath}/App/Http/Controllers/{$name}Controller.php", "<?php\n\nnamespace {$ns}\\App\\Http\\Controllers;\n\nuse Illuminate\\Http\\JsonResponse;\nuse Illuminate\\Http\\Request;\n{$resourceUse}use {$ns}\\App\\Models\\{$name};\n\nclass {$name}Controller\n{\n    public function index(): JsonResponse\n    {\n        {$index}\n    }\n\n    public function store(Request \\$request): JsonResponse\n    {\n        \\$model = {$name}::create(\\$request->all());\n        {$store}\n    }\n\n    public function show({$name} \\${$param}): JsonResponse\n    {\n        return response()->json({$show});\n    }\n\n    public function update(Request \\$request, {$name} \\${$param}): JsonResponse\n    {\n        \\${$param}->update(\\$request->all());\n        return response()->json({$show});\n    }\n\n    public function destroy({$name} \\${$param}): JsonResponse\n    {\n        \\${$param}->delete();\n        return response()->noContent();\n    }\n}\n");
         }
 
         if (in_array('factories', $components, true) && in_array('models', $components, true)) {
