@@ -36,6 +36,15 @@ class LaravelModularServiceProvider extends ServiceProvider
                 continue;
             }
 
+            $moduleDirectory = dirname($moduleConfig);
+            $namespace = $module['namespace'] ?? null;
+
+            if (is_string($namespace)) {
+                /** @var \Composer\Autoload\ClassLoader $loader */
+                $loader = require base_path('vendor/autoload.php');
+                $loader->addPsr4(rtrim($namespace, '\\') . '\\', $moduleDirectory . DIRECTORY_SEPARATOR);
+            }
+
             $provider = $module['provider'] ?? null;
 
             if (is_string($provider) && class_exists($provider)) {
