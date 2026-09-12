@@ -26,6 +26,12 @@ class MakeModuleCommand extends Command
         'feature-tests' => 'Tests/Feature', 'unit-tests' => 'Tests/Unit',
     ];
 
+    private array $presetDescriptions = [
+        'minimal' => 'Minimal - module config, provider, model, and basic module structure',
+        'normal' => 'Normal - controller, request, model, service, and API routes',
+        'all' => 'All - normal plus resources, policies, database, middleware, console, and tests',
+    ];
+
     private array $normalComponents = ['controllers', 'requests', 'models', 'services', 'routes'];
 
     private array $allComponents = [
@@ -84,8 +90,18 @@ class MakeModuleCommand extends Command
             return $this->normalComponents;
         }
 
-        $preset = $this->choice('How much should be generated?', ['minimal', 'normal', 'all'], 'normal');
-        return $this->presetComponents($preset);
+        $choice = $this->choice(
+            'How much should be generated?',
+            array_values($this->presetDescriptions),
+            1,
+            null,
+            true
+        );
+
+        $descriptions = array_values($this->presetDescriptions);
+        $selected = array_search($choice, $descriptions, true);
+
+        return $this->presetComponents(array_keys($this->presetDescriptions)[$selected] ?? 'normal');
     }
 
     private function presetComponents(string $preset): ?array
@@ -529,9 +545,11 @@ PHP, []);
         if ($files->isDirectory($path)) {
             return;
         }
+
         if ($files->exists($path)) {
             throw new \RuntimeException("Cannot create directory [{$path}] because a file already exists at that path.");
         }
+
         $files->makeDirectory($path, 0755, true);
     }
 
