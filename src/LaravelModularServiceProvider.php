@@ -29,7 +29,6 @@ class LaravelModularServiceProvider extends ServiceProvider
             return;
         }
 
-        /** @var \Composer\Autoload\ClassLoader $loader */
         $loader = require base_path('vendor/autoload.php');
 
         foreach ($files->glob("{$modulesPath}/*/module.json") as $moduleConfig) {
@@ -54,6 +53,15 @@ class LaravelModularServiceProvider extends ServiceProvider
             if (is_string($provider) && class_exists($provider)) {
                 $this->app->register($provider);
             }
+        }
+
+        $sharedDirectory = $modulesPath . DIRECTORY_SEPARATOR . 'Shared';
+
+        if ($files->isDirectory($sharedDirectory)) {
+            $loader->addPsr4(
+                'Modules\\Shared\\',
+                $sharedDirectory . DIRECTORY_SEPARATOR
+            );
         }
     }
 }
