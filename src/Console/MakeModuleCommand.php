@@ -140,7 +140,7 @@ class MakeModuleCommand extends Command
             $factory = in_array('factories', $components, true)
                 ? "\n    protected static function newFactory(): \\Illuminate\\Database\\Eloquent\\Factories\\Factory\n    {\n        return \\{$ns}\\Database\\Factories\\{$name}Factory::new();\n    }\n"
                 : '';
-            $this->put($files, "{$modulePath}/App/Models/{$name}.php", "<?php\n\nnamespace {$ns}\\App\\Models;\n\nuse Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\nuse Illuminate\\Database\\Eloquent\\Model;\n\nclass {$name} extends Model\n{\n    use HasFactory;\n\n    protected \\$guarded = [];{$factory}\n}\n");
+            $this->put($files, "{$modulePath}/App/Models/{$name}.php", "<?php\n\nnamespace {$ns}\\App\\Models;\n\nuse Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\nuse Illuminate\\Database\\Eloquent\\Model;\n\nclass {$name} extends Model\n{\n    use HasFactory;\n\n    protected \$guarded = [];{$factory}\n}\n");
         }
 
         if (in_array('requests', $components, true)) {
