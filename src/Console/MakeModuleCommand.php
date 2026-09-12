@@ -10,7 +10,7 @@ class MakeModuleCommand extends Command
 {
     protected $signature = 'module:make
                             {name : The name of the module}
-                            {--components=* : Components to generate, comma-separated}
+                            {--components=* : Components to generate, e.g. controllers,models,services}
                             {--minimal : Generate only the module essentials}';
 
     protected $description = 'Create a new Laravel module';
@@ -43,19 +43,18 @@ class MakeModuleCommand extends Command
 
         $components = $this->components(array_keys($available));
 
+        if ($components === null) {
+            return self::FAILURE;
+        }
+
         $files->makeDirectory("{$modulePath}/Config", 0755, true);
         $files->makeDirectory("{$modulePath}/App/Providers", 0755, true);
 
         foreach ($components as $component) {
-            $files->makeDirectory(
-                "{$modulePath}/{$available[$component]}",
-                0755,
-                true
-            );
+            $files->makeDirectory("{$modulePath}/{$available[$component]}", 0755, true);
         }
 
-        $configPath = "{$modulePath}/Config/config.php";
-        $files->put($configPath, <<<PHP
+        $files->put("{$modulePath}/Config/config.php", <<<PHP
 <?php
 
 return [
@@ -92,10 +91,7 @@ PHP;
 
         $provider .= "    }\n}\n";
 
-        $files->put(
-            "{$modulePath}/App/Providers/{$name}ServiceProvider.php",
-            $provider
-        );
+        $files->put("{$modulePath}/App/Providers/{$name}ServiceProvider.php", $provider);
 
         if (in_array('controllers', $components, true)) {
             $files->put("{$modulePath}/App/Http/Controllers/{$name}Controller.php", <<<PHP
@@ -285,6 +281,7 @@ PHP
             json_encode([
                 'name' => $name,
                 'namespace' => "Modules\\{$name}",
+                'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
                 'version' => '1.0.0',
                 'description' => "{$name} module",
                 'enabled' => true,
@@ -301,24 +298,24 @@ PHP
 
     /**
      * @param array<int, string> $available
-     * @return array<int, string>
+     * @return array<int, string>|null
      */
-    private function components(array $available): array
+    private function components(array $available): ?array
     {
         $requested = $this->option('components');
 
         if ($requested !== []) {
-            $requested = array_map(
+            $requested = array_values(array_filter(array_map(
                 static fn (string $component): string => Str::kebab(trim($component)),
                 $requested
-            );
+            )));
 
             $invalid = array_diff($requested, $available);
 
             if ($invalid !== []) {
                 $this->error('Unknown component(s): ' . implode(', ', $invalid));
                 $this->line('Available: ' . implode(', ', $available));
-                return [];
+                return null;
             }
 
             return array_values(array_unique($requested));
@@ -334,7 +331,6 @@ PHP
             ];
         }
 
-        $default = $available;
         $selected = $this->choice(
             'Which components should be generated?',
             $available,
@@ -343,6 +339,6 @@ PHP
             true
         );
 
-        return array_values(array_intersect($default, $selected));
+        return array_values(array_intersect($available, $selected));
     }
 }
