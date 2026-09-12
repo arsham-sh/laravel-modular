@@ -15,10 +15,21 @@ class ModulePresetTest extends TestCase
         }
     }
 
-    public function test_normal_preset_contains_the_core_module_components(): void
+    public function test_basic_preset_contains_only_the_essential_components(): void
     {
         $this->assertSame(
-            ['controllers', 'requests', 'models', 'services', 'routes'],
+            ['controllers', 'routes'],
+            ModulePreset::Basic->components()
+        );
+    }
+
+    public function test_normal_preset_contains_database_crud_and_tests(): void
+    {
+        $this->assertSame(
+            [
+                'controllers', 'requests', 'models', 'services', 'database', 'routes',
+                'feature-tests', 'unit-tests',
+            ],
             ModulePreset::Normal->components()
         );
     }
