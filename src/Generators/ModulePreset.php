@@ -12,7 +12,7 @@ enum ModulePreset: string
     {
         return match ($this) {
             self::Basic => 'Basic - controller, provider, config, and API routes',
-            self::Normal => 'Normal - database-backed CRUD module with request, model, service, and API routes',
+            self::Normal => 'Normal - database-backed CRUD module with request, model, service, and tests',
             self::All => 'All - normal plus resources, policies, database, middleware, console, and tests',
         };
     }
@@ -21,7 +21,10 @@ enum ModulePreset: string
     {
         return match ($this) {
             self::Basic => ['controllers', 'routes'],
-            self::Normal => ['controllers', 'requests', 'models', 'services', 'database', 'routes'],
+            self::Normal => [
+                'controllers', 'requests', 'models', 'services', 'database', 'routes',
+                'feature-tests', 'unit-tests',
+            ],
             self::All => [
                 'controllers', 'requests', 'models', 'services', 'resources', 'policies',
                 'database', 'routes', 'middleware', 'console', 'feature-tests', 'unit-tests',
