@@ -7,10 +7,10 @@ use PHPUnit\Framework\TestCase;
 
 class ModuleComponentsTest extends TestCase
 {
-    public function test_controllers_pull_in_required_components(): void
+    public function test_controllers_always_register_routes(): void
     {
         $this->assertSame(
-            ['controllers', 'models', 'requests', 'routes'],
+            ['controllers', 'routes'],
             ModuleComponents::normalize(['controllers'])
         );
     }
