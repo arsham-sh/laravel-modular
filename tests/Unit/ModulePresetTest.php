@@ -23,14 +23,22 @@ class ModulePresetTest extends TestCase
         );
     }
 
-    public function test_normal_preset_contains_database_crud_and_tests(): void
+    public function test_normal_preset_is_a_simple_database_backed_crud_module(): void
+    {
+        $this->assertSame(
+            ['controllers', 'models', 'database', 'routes'],
+            ModulePreset::Normal->components()
+        );
+    }
+
+    public function test_advanced_preset_adds_validation_services_and_feature_tests(): void
     {
         $this->assertSame(
             [
                 'controllers', 'requests', 'models', 'services', 'database', 'routes',
-                'feature-tests', 'unit-tests',
+                'feature-tests',
             ],
-            ModulePreset::Normal->components()
+            ModulePreset::Advanced->components()
         );
     }
 }
