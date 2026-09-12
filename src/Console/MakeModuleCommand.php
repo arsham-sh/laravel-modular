@@ -24,7 +24,6 @@ class MakeModuleCommand extends Command
         'services' => 'App/Services',
         'resources' => 'App/Http/Resources',
         'factories' => 'Database/Factories',
-        'seeders' => 'Database/Seeders',
         'routes' => 'Routes',
         'middleware' => 'App/Http/Middleware',
         'console' => 'App/Console',
@@ -37,13 +36,12 @@ class MakeModuleCommand extends Command
 
     /** @var array<string, string> */
     private array $componentLabels = [
-        'controllers' => 'API controller',
+        'controllers' => 'Controller',
         'requests' => 'Form request',
-        'models' => 'Eloquent model',
-        'services' => 'Service class',
+        'models' => 'Model',
+        'services' => 'Service',
         'resources' => 'API resource',
-        'factories' => 'Model factory',
-        'seeders' => 'Seeder',
+        'factories' => 'Factory',
         'routes' => 'API routes',
         'middleware' => 'Middleware',
         'console' => 'Console command',
@@ -51,6 +49,7 @@ class MakeModuleCommand extends Command
         'unit-tests' => 'Unit tests',
     ];
 
+    /** Create the requested module. */
     public function handle(Filesystem $files): int
     {
         $name = Str::studly($this->argument('name'));
@@ -73,25 +72,16 @@ class MakeModuleCommand extends Command
             $files->makeDirectory("{$modulePath}/{$this->paths[$component]}", 0755, true);
         }
 
-        $this->putTemplate($files, "{$modulePath}/Config/config.php", <<<'PHP'
-<?php
-
-return [
-    'enabled' => true,
-];
-PHP
-        );
-
+        $this->writeFile($files, "{$modulePath}/Config/config.php", "<?php\n\nreturn [\n    'enabled' => true,\n];\n");
         $this->createProvider($files, $modulePath, $name, $components);
         $this->createComponents($files, $modulePath, $name, $components);
         $this->createManifest($files, $modulePath, $name, $components);
 
         $this->info("Module [{$name}] created successfully.");
-
         return self::SUCCESS;
     }
 
-    /** @return list<string>|null */
+    /** Determine which components should be generated. */
     private function components(): ?array
     {
         $requested = $this->option('components');
@@ -109,10 +99,9 @@ PHP
             return $this->coreComponents;
         }
 
-        $choices = array_values($this->componentLabels);
         $selected = $this->choice(
-            'What should this module include?',
-            $choices,
+            'Select the components for your module',
+            array_values($this->componentLabels),
             null,
             null,
             true
@@ -131,7 +120,7 @@ PHP
         return $this->normalizeComponents($components);
     }
 
-    /** @param list<string> $components */
+    /** Validate explicitly requested components. */
     private function validateComponents(array $components): ?array
     {
         $invalid = array_diff($components, array_keys($this->paths));
@@ -145,7 +134,7 @@ PHP
         return $this->normalizeComponents($components);
     }
 
-    /** @param list<string> $components */
+    /** Add required components for selected components. */
     private function normalizeComponents(array $components): array
     {
         if (in_array('controllers', $components, true)) {
@@ -168,7 +157,7 @@ PHP
         return array_values(array_unique($components));
     }
 
-    /** @param list<string> $components */
+    /** Generate the module service provider. */
     private function createProvider(Filesystem $files, string $modulePath, string $name, array $components): void
     {
         $routeLoader = in_array('routes', $components, true)
@@ -184,56 +173,58 @@ use Illuminate\\Support\\ServiceProvider;
 
 class {$name}ServiceProvider extends ServiceProvider
 {
+    /** Register module services and configuration. */
     public function register(): void
     {
         \$this->mergeConfigFrom(__DIR__ . '/../../Config/config.php', '{$this->configKey($name)}');
     }
 
+    /** Bootstrap module resources. */
     public function boot(): void
     {
 {$routeLoader}    }
 }
 PHP;
 
-        $this->put($files, "{$modulePath}/App/Providers/{$name}ServiceProvider.php", $content);
+        $this->writeFile($files, "{$modulePath}/App/Providers/{$name}ServiceProvider.php", $content . PHP_EOL);
     }
 
-    /** @param list<string> $components */
+    /** Generate the selected module files. */
     private function createComponents(Filesystem $files, string $modulePath, string $name, array $components): void
     {
         $namespace = "Modules\\{$name}";
         $parameter = Str::camel($name);
         $route = Str::kebab(Str::pluralStudly($name));
-        $table = Str::snake(Str::pluralStudly($name));
         $vars = [
             '__NS__' => $namespace,
             '__NAME__' => $name,
             '__PARAM__' => $parameter,
             '__ROUTE__' => $route,
-            '__TABLE__' => $table,
         ];
 
         if (in_array('models', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/App/Models/{$name}.php", <<<'PHP'
+            $factory = in_array('factories', $components, true);
+            $this->writeTemplate($files, "{$modulePath}/App/Models/{$name}.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+__FACTORY_USE__use Illuminate\Database\Eloquent\Model;
 
 class __NAME__ extends Model
 {
-    use HasFactory;
-
+__FACTORY_TRAIT__    /** The attributes that can be mass assigned. */
     protected $guarded = [];
 }
 PHP
-            , $vars);
+            , $vars + [
+                '__FACTORY_USE__' => $factory ? "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\n" : '',
+                '__FACTORY_TRAIT__' => $factory ? "    use HasFactory;\n\n" : '',
+            ]);
         }
 
         if (in_array('requests', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/App/Http/Requests/{$name}Request.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/App/Http/Requests/{$name}Request.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Requests;
@@ -242,11 +233,13 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class __NAME__Request extends FormRequest
 {
+    /** Determine whether the user can make this request. */
     public function authorize(): bool
     {
         return true;
     }
 
+    /** Return the validation rules for the request. */
     public function rules(): array
     {
         return [];
@@ -257,20 +250,21 @@ PHP
         }
 
         if (in_array('services', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/App/Services/{$name}Service.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/App/Services/{$name}Service.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Services;
 
 class __NAME__Service
 {
+    // Add the module's business logic here.
 }
 PHP
             , $vars);
         }
 
         if (in_array('resources', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/App/Http/Resources/{$name}Resource.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/App/Http/Resources/{$name}Resource.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Resources;
@@ -280,6 +274,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class __NAME__Resource extends JsonResource
 {
+    /** Transform the resource into an array. */
     public function toArray(Request $request): array
     {
         return parent::toArray($request);
@@ -290,74 +285,12 @@ PHP
         }
 
         if (in_array('controllers', $components, true)) {
-            $resource = in_array('resources', $components, true);
-            $resourceUse = $resource ? "use {$namespace}\\App\\Http\\Resources\\{$name}Resource;\n" : '';
-            $index = $resource
-                ? "return response()->json({$name}Resource::collection({$name}::query()->paginate()));"
-                : "return response()->json({$name}::query()->paginate());";
-            $store = $resource
-                ? "return response()->json(new {$name}Resource(\$model), 201);"
-                : "return response()->json(\$model, 201);";
-            $show = $resource ? "new {$name}Resource(\${$parameter})" : "\${$parameter}";
-
-            $controller = strtr(<<<'PHP'
-<?php
-
-namespace __NS__\App\Http\Controllers;
-
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-__RESOURCE_USE__use __NS__\App\Models\__NAME__;
-
-class __NAME__Controller
-{
-    public function index(): JsonResponse
-    {
-        __INDEX__
-    }
-
-    public function store(Request $request): JsonResponse
-    {
-        $model = __NAME__::create($request->all());
-
-        __STORE__
-    }
-
-    public function show(__NAME__ $__PARAM__): JsonResponse
-    {
-        return response()->json(__SHOW__);
-    }
-
-    public function update(Request $request, __NAME__ $__PARAM__): JsonResponse
-    {
-        $__PARAM__->update($request->all());
-
-        return response()->json(__SHOW__);
-    }
-
-    public function destroy(__NAME__ $__PARAM__): JsonResponse
-    {
-        $__PARAM__->delete();
-
-        return response()->noContent();
-    }
-}
-PHP
-            , [
-                '__NS__' => $namespace,
-                '__NAME__' => $name,
-                '__PARAM__' => $parameter,
-                '__RESOURCE_USE__' => $resourceUse,
-                '__INDEX__' => $index,
-                '__STORE__' => $store,
-                '__SHOW__' => $show,
-            ]);
-
-            $this->put($files, "{$modulePath}/App/Http/Controllers/{$name}Controller.php", $controller);
+            $this->createController($files, $modulePath, $name, $namespace, $parameter, in_array('resources', $components, true));
+            $this->createHttpResponsesTrait($files, $modulePath, $namespace);
         }
 
-        if (in_array('factories', $components, true) && in_array('models', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/Database/Factories/{$name}Factory.php", <<<'PHP'
+        if (in_array('factories', $components, true)) {
+            $this->writeTemplate($files, "{$modulePath}/Database/Factories/{$name}Factory.php", <<<'PHP'
 <?php
 
 namespace __NS__\Database\Factories;
@@ -369,6 +302,7 @@ class __NAME__Factory extends Factory
 {
     protected $model = __NAME__::class;
 
+    /** Define the model's default state. */
     public function definition(): array
     {
         return [];
@@ -378,26 +312,8 @@ PHP
             , $vars);
         }
 
-        if (in_array('seeders', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/Database/Seeders/{$name}Seeder.php", <<<'PHP'
-<?php
-
-namespace __NS__\Database\Seeders;
-
-use Illuminate\Database\Seeder;
-
-class __NAME__Seeder extends Seeder
-{
-    public function run(): void
-    {
-    }
-}
-PHP
-            , $vars);
-        }
-
         if (in_array('routes', $components, true) && in_array('controllers', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/Routes/api.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/Routes/api.php", <<<'PHP'
 <?php
 
 use Illuminate\Support\Facades\Route;
@@ -409,7 +325,7 @@ PHP
         }
 
         if (in_array('middleware', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/App/Http/Middleware/{$name}Middleware.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/App/Http/Middleware/{$name}Middleware.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Middleware;
@@ -420,6 +336,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class __NAME__Middleware
 {
+    /** Handle an incoming request. */
     public function handle(Request $request, Closure $next): Response
     {
         return $next($request);
@@ -431,8 +348,7 @@ PHP
 
         if (in_array('console', $components, true)) {
             $vars['__SIGNATURE__'] = Str::kebab($name) . ':run';
-
-            $this->putTemplate($files, "{$modulePath}/App/Console/{$name}Command.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/App/Console/{$name}Command.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Console;
@@ -442,9 +358,9 @@ use Illuminate\Console\Command;
 class __NAME__Command extends Command
 {
     protected $signature = '__SIGNATURE__';
-
     protected $description = 'Run the __NAME__ module command';
 
+    /** Execute the console command. */
     public function handle(): int
     {
         return self::SUCCESS;
@@ -455,18 +371,23 @@ PHP
         }
 
         if (in_array('feature-tests', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/Tests/Feature/{$name}Test.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/Tests/Feature/{$name}Test.php", <<<'PHP'
 <?php
 
 namespace __NS__\Tests\Feature;
 
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class __NAME__Test extends TestCase
 {
-    public function test_module_route_is_registered(): void
+    /** Ensure the module resource route is registered. */
+    public function test_module_routes_are_registered(): void
     {
-        $this->assertTrue(\Illuminate\Support\Facades\Route::has('__ROUTE__.index'));
+        $route = Route::getRoutes()->getByName('__ROUTE__.index');
+
+        $this->assertNotNull($route);
+        $this->assertSame('/__ROUTE__', $route->uri());
     }
 }
 PHP
@@ -474,7 +395,7 @@ PHP
         }
 
         if (in_array('unit-tests', $components, true)) {
-            $this->putTemplate($files, "{$modulePath}/Tests/Unit/{$name}ServiceTest.php", <<<'PHP'
+            $this->writeTemplate($files, "{$modulePath}/Tests/Unit/{$name}ServiceTest.php", <<<'PHP'
 <?php
 
 namespace __NS__\Tests\Unit;
@@ -484,6 +405,7 @@ use __NS__\App\Services\__NAME__Service;
 
 class __NAME__ServiceTest extends TestCase
 {
+    /** Ensure the generated service can be instantiated. */
     public function test_service_can_be_instantiated(): void
     {
         $this->assertInstanceOf(__NAME__Service::class, new __NAME__Service());
@@ -494,7 +416,118 @@ PHP
         }
     }
 
-    /** @param list<string> $components */
+    /** Generate a readable resource controller. */
+    private function createController(Filesystem $files, string $modulePath, string $name, string $namespace, string $parameter, bool $resource): void
+    {
+        $resourceUse = $resource ? "use {$namespace}\\App\\Http\\Resources\\{$name}Resource;\n" : '';
+        $show = $resource ? "new {$name}Resource(\${$parameter})" : "\${$parameter}";
+        $index = $resource
+            ? "return \$this->success({$name}Resource::collection({$name}::query()->paginate()));"
+            : "return \$this->success({$name}::query()->paginate());";
+        $store = $resource
+            ? "return \$this->success(new {$name}Resource(\$model), 'Created successfully.', 201);"
+            : "return \$this->success(\$model, 'Created successfully.', 201);";
+
+        $content = strtr(<<<'PHP'
+<?php
+
+namespace __NS__\App\Http\Controllers;
+
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+__RESOURCE_USE__use __NS__\App\Models\__NAME__;
+use __NS__\App\Traits\HttpResponses;
+
+class __NAME__Controller
+{
+    use HttpResponses;
+
+    /** Display a paginated list of resources. */
+    public function index(): JsonResponse
+    {
+        __INDEX__
+    }
+
+    /** Store a new resource. */
+    public function store(Request $request): JsonResponse
+    {
+        $model = __NAME__::create($request->all());
+
+        __STORE__
+    }
+
+    /** Display a single resource. */
+    public function show(__NAME__ $__PARAM__): JsonResponse
+    {
+        return $this->success(__SHOW__);
+    }
+
+    /** Update an existing resource. */
+    public function update(Request $request, __NAME__ $__PARAM__): JsonResponse
+    {
+        $__PARAM__->update($request->all());
+
+        return $this->success(__SHOW__, 'Updated successfully.');
+    }
+
+    /** Delete a resource. */
+    public function destroy(__NAME__ $__PARAM__): JsonResponse
+    {
+        $__PARAM__->delete();
+
+        return $this->success(null, 'Deleted successfully.');
+    }
+}
+PHP
+        , [
+            '__NS__' => $namespace,
+            '__NAME__' => $name,
+            '__PARAM__' => $parameter,
+            '__RESOURCE_USE__' => $resourceUse,
+            '__INDEX__' => $index,
+            '__STORE__' => $store,
+            '__SHOW__' => $show,
+        ]);
+
+        $this->writeFile($files, "{$modulePath}/App/Http/Controllers/{$name}Controller.php", $content);
+    }
+
+    /** Generate a shared JSON response helper for module controllers. */
+    private function createHttpResponsesTrait(Filesystem $files, string $modulePath, string $namespace): void
+    {
+        $this->writeFile($files, "{$modulePath}/App/Traits/HttpResponses.php", <<<PHP
+<?php
+
+namespace {$namespace}\\App\\Traits;
+
+use Illuminate\\Http\\JsonResponse;
+
+trait HttpResponses
+{
+    /** Return a successful JSON response. */
+    protected function success(mixed \$data = null, ?string \$message = null, int \$code = 200): JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'message' => \$message,
+            'data' => \$data,
+        ], \$code);
+    }
+
+    /** Return an error JSON response. */
+    protected function error(mixed \$data = null, ?string \$message = null, int \$code = 500): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'message' => \$message,
+            'data' => \$data,
+        ], \$code);
+    }
+}
+PHP);
+    }
+
+    /** Write the module manifest. */
     private function createManifest(Filesystem $files, string $modulePath, string $name, array $components): void
     {
         $manifest = [
@@ -507,21 +540,27 @@ PHP
             'components' => $components,
         ];
 
-        $this->put($files, "{$modulePath}/module.json", json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+        $this->writeFile(
+            $files,
+            "{$modulePath}/module.json",
+            json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL
+        );
     }
 
+    /** Return the module configuration key. */
     private function configKey(string $name): string
     {
         return Str::kebab($name);
     }
 
-    /** @param array<string, string> $variables */
-    private function putTemplate(Filesystem $files, string $path, string $template, array $variables = []): void
+    /** Write a template after replacing module placeholders. */
+    private function writeTemplate(Filesystem $files, string $path, string $template, array $variables): void
     {
-        $files->put($path, strtr($template, $variables) . PHP_EOL);
+        $this->writeFile($files, $path, strtr($template, $variables) . PHP_EOL);
     }
 
-    private function put(Filesystem $files, string $path, string $contents): void
+    /** Write generated contents to disk. */
+    private function writeFile(Filesystem $files, string $path, string $contents): void
     {
         $files->put($path, $contents);
     }

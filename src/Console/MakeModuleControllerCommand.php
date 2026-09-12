@@ -9,12 +9,13 @@ use Illuminate\Support\Str;
 class MakeModuleControllerCommand extends Command
 {
     protected $signature = 'module:make-controller
-                            {module : The name of the module}
-                            {name : The controller name}
-                            {--resource : Generate resource-style CRUD methods}';
+        {module : The name of the module}
+        {name : The controller name}
+        {--resource : Generate resource-style CRUD methods}';
 
     protected $description = 'Create a controller inside an existing Laravel module';
 
+    /** Create the controller. */
     public function handle(Filesystem $files): int
     {
         $module = Str::studly($this->argument('module'));
@@ -28,6 +29,7 @@ class MakeModuleControllerCommand extends Command
 
         $directory = "{$modulePath}/App/Http/Controllers";
         $path = "{$directory}/{$name}Controller.php";
+        $namespace = "Modules\\{$module}";
 
         if ($files->exists($path)) {
             $this->error("Controller [{$name}Controller] already exists.");
@@ -36,21 +38,125 @@ class MakeModuleControllerCommand extends Command
 
         $files->makeDirectory($directory, 0755, true);
 
-        $methods = $this->option('resource')
-            ? "    public function index(): JsonResponse\n    {\n        return response()->json([]);\n    }\n\n    public function store(Request \\$request): JsonResponse\n    {\n        return response()->json([], 201);\n    }\n\n    public function show(mixed \\$id): JsonResponse\n    {\n        return response()->json(['id' => \\$id]);\n    }\n\n    public function update(Request \\$request, mixed \\$id): JsonResponse\n    {\n        return response()->json(['id' => \\$id]);\n    }\n\n    public function destroy(mixed \\$id): JsonResponse\n    {\n        return response()->json(null, 204);\n    }"
-            : "    public function index(): JsonResponse\n    {\n        return response()->json([]);\n    }";
+        $this->writeController($files, $path, $namespace, $name);
+
+        if ($this->option('resource')) {
+            $this->writeResponsesTrait($files, $modulePath, $namespace);
+        }
+
+        $this->info("Controller [{$name}Controller] created in module [{$module}].");
+        return self::SUCCESS;
+    }
+
+    /** Generate the controller class. */
+    private function writeController(Filesystem $files, string $path, string $namespace, string $name): void
+    {
+        $methods = $this->option('resource') ? <<<'PHP'
+    /** Display a list of resources. */
+    public function index(): JsonResponse
+    {
+        return $this->success([]);
+    }
+
+    /** Store a new resource. */
+    public function store(Request $request): JsonResponse
+    {
+        return $this->success([], 'Created successfully.', 201);
+    }
+
+    /** Display a single resource. */
+    public function show(mixed $id): JsonResponse
+    {
+        return $this->success(['id' => $id]);
+    }
+
+    /** Update an existing resource. */
+    public function update(Request $request, mixed $id): JsonResponse
+    {
+        return $this->success(['id' => $id], 'Updated successfully.');
+    }
+
+    /** Delete a resource. */
+    public function destroy(mixed $id): JsonResponse
+    {
+        return $this->success(null, 'Deleted successfully.');
+    }
+PHP
+            : <<<'PHP'
+    /** Handle the controller request. */
+    public function index(): JsonResponse
+    {
+        return $this->success([]);
+    }
+PHP;
 
         $imports = $this->option('resource')
             ? "use Illuminate\\Http\\JsonResponse;\nuse Illuminate\\Http\\Request;\n"
             : "use Illuminate\\Http\\JsonResponse;\n";
 
-        $content = "<?php\n\nnamespace Modules\\{$module}\\App\\Http\\Controllers;\n\n{$imports}\nclass {$name}Controller\n{\n{$methods}\n}\n";
+        $content = strtr(<<<'PHP'
+<?php
+
+namespace __NS__\App\Http\Controllers;
+
+__IMPORTS__use __NS__\App\Traits\HttpResponses;
+
+class __NAME__Controller
+{
+    use HttpResponses;
+
+__METHODS__
+}
+PHP
+        , [
+            '__NS__' => $namespace,
+            '__NAME__' => $name,
+            '__IMPORTS__' => $imports,
+            '__METHODS__' => $methods,
+        ]);
 
         $files->put($path, $content);
+    }
 
-        $this->info("Controller [{$name}Controller] created in module [{$module}].");
-        $this->line("Location: Modules/{$module}/App/Http/Controllers/{$name}Controller.php");
+    /** Generate the module response helper used by resource controllers. */
+    private function writeResponsesTrait(Filesystem $files, string $modulePath, string $namespace): void
+    {
+        $path = "{$modulePath}/App/Traits/HttpResponses.php";
 
-        return self::SUCCESS;
+        if ($files->exists($path)) {
+            return;
+        }
+
+        $files->makeDirectory(dirname($path), 0755, true);
+        $files->put($path, <<<PHP
+<?php
+
+namespace {$namespace}\\App\\Traits;
+
+use Illuminate\\Http\\JsonResponse;
+
+trait HttpResponses
+{
+    /** Return a successful JSON response. */
+    protected function success(mixed \$data = null, ?string \$message = null, int \$code = 200): JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'message' => \$message,
+            'data' => \$data,
+        ], \$code);
+    }
+
+    /** Return an error JSON response. */
+    protected function error(mixed \$data = null, ?string \$message = null, int \$code = 500): JsonResponse
+    {
+        return response()->json([
+            'status' => 'error',
+            'message' => \$message,
+            'data' => \$data,
+        ], \$code);
+    }
+}
+PHP);
     }
 }
