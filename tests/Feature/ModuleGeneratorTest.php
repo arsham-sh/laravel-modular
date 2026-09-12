@@ -29,22 +29,48 @@ class ModuleGeneratorTest extends TestCase
         $this->assertFileExists($this->modulePath . '/App/Providers/BasicExampleServiceProvider.php');
         $this->assertFileDoesNotExist($this->modulePath . '/App/Models/BasicExample.php');
         $this->assertFileDoesNotExist($this->modulePath . '/App/Services/BasicExampleService.php');
-        $this->assertFileDoesNotExist($this->modulePath . '/App/Traits/HttpResponses.php');
+        $this->assertFileDoesNotExist($this->modulePath . '/App/Http/Requests');
+        $this->assertFileDoesNotExist($this->modulePath . '/Tests');
     }
 
-    public function test_normal_generation_creates_a_complete_database_backed_module(): void
+    public function test_normal_generation_creates_a_simple_database_backed_crud_module(): void
     {
         $this->generate('NormalExample', ModulePreset::Normal->components());
 
         $this->assertFileExists($this->modulePath . '/App/Models/NormalExample.php');
-        $this->assertFileExists($this->modulePath . '/App/Http/Requests/NormalExampleRequest.php');
-        $this->assertFileExists($this->modulePath . '/App/Services/NormalExampleService.php');
         $this->assertFileExists($this->modulePath . '/Database/Factories/NormalExampleFactory.php');
         $this->assertFileExists($this->modulePath . '/Routes/api.php');
-        $this->assertStringContainsString("Route::apiResource('normal-examples'", file_get_contents($this->modulePath . '/Routes/api.php'));
-        $this->assertStringContainsString("'name' => ['required', 'string', 'max:255']", file_get_contents($this->modulePath . '/App/Http/Requests/NormalExampleRequest.php'));
-        $this->assertStringContainsString("protected \$fillable = [", file_get_contents($this->modulePath . '/App/Models/NormalExample.php'));
-        $this->assertStringContainsString("'name' => fake()->name()", file_get_contents($this->modulePath . '/Database/Factories/NormalExampleFactory.php'));
+        $this->assertFileDoesNotExist($this->modulePath . '/App/Http/Requests');
+        $this->assertFileDoesNotExist($this->modulePath . '/App/Services');
+        $this->assertFileDoesNotExist($this->modulePath . '/Tests');
+
+        $controller = file_get_contents($this->modulePath . '/App/Http/Controllers/NormalExampleController.php');
+
+        $this->assertStringContainsString('Request $request', $controller);
+        $this->assertStringContainsString('NormalExample::create($request->all())', $controller);
+        $this->assertStringContainsString('$normalExample->update($request->all())', $controller);
+        $this->assertStringNotContainsString('NormalExampleService', $controller);
+    }
+
+    public function test_advanced_generation_separates_validation_and_application_logic(): void
+    {
+        $this->generate('AdvancedExample', ModulePreset::Advanced->components());
+
+        $this->assertFileExists($this->modulePath . '/App/Http/Requests/StoreAdvancedExampleRequest.php');
+        $this->assertFileExists($this->modulePath . '/App/Http/Requests/UpdateAdvancedExampleRequest.php');
+        $this->assertFileExists($this->modulePath . '/App/Services/AdvancedExampleService.php');
+        $this->assertFileExists($this->modulePath . '/Tests/Feature/AdvancedExampleTest.php');
+
+        $storeRequest = file_get_contents($this->modulePath . '/App/Http/Requests/StoreAdvancedExampleRequest.php');
+        $updateRequest = file_get_contents($this->modulePath . '/App/Http/Requests/UpdateAdvancedExampleRequest.php');
+        $controller = file_get_contents($this->modulePath . '/App/Http/Controllers/AdvancedExampleController.php');
+
+        $this->assertStringContainsString("'name' => ['required', 'string', 'max:255']", $storeRequest);
+        $this->assertStringContainsString("'name' => ['required', 'string', 'max:255']", $updateRequest);
+        $this->assertStringContainsString('StoreAdvancedExampleRequest $request', $controller);
+        $this->assertStringContainsString('UpdateAdvancedExampleRequest $request', $controller);
+        $this->assertStringContainsString('$this->service->create($request->validated())', $controller);
+        $this->assertStringContainsString('$this->service->update($advancedExample, $request->validated())', $controller);
     }
 
     private function generate(string $name, array $components): void
