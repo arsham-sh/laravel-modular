@@ -17,23 +17,29 @@ final class ModuleComponents
         'console' => 'App/Console',
         'feature-tests' => 'Tests/Feature',
         'unit-tests' => 'Tests/Unit',
+        'traits' => 'App/Traits',
     ];
 
     public static function normalize(array $components): array
     {
         $components = array_values(array_unique($components));
-        if (in_array('controllers', $components, true)) {
-            $components = array_merge($components, ['models', 'requests', 'routes']);
-        }
+
         if (array_intersect(['resources', 'policies', 'database'], $components)) {
             $components[] = 'models';
         }
+
         if (in_array('feature-tests', $components, true)) {
             $components[] = 'routes';
         }
+
         if (in_array('unit-tests', $components, true)) {
             $components[] = 'services';
         }
+
+        if (in_array('controllers', $components, true)) {
+            $components[] = 'routes';
+        }
+
         return array_values(array_unique($components));
     }
 
