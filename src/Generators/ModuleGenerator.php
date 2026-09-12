@@ -348,17 +348,14 @@ PHP;
             ? '$this->service->paginate()'
             : "{$v['name']}::query()->paginate()";
         $create = $hasService
-            ? "$this->service->create({$input})"
+            ? '$this->service->create(' . $input . ')'
             : "{$v['name']}::create({$input})";
         $update = $hasService
-            ? "$this->service->update(\${$v['parameter']}, {$input})"
-            : "\${$v['parameter']}->update({$input});\n\n        return \${$v['parameter']}->refresh()";
+            ? '$this->service->update($' . $v['parameter'] . ', ' . $input . ')'
+            : '$' . $v['parameter'] . '->update(' . $input . ')';
         $delete = $hasService
-            ? "$this->service->delete(\${$v['parameter']})"
-            : "\${$v['parameter']}->delete()";
-
-        $indexResult = $hasResource ? "{{name}}Resource::collection({{index}})" : '{{index}}';
-        $entityResult = $hasResource ? 'new {{name}}Resource({{expression}})' : '{{expression}}';
+            ? '$this->service->delete($' . $v['parameter'] . ')'
+            : '$' . $v['parameter'] . '->delete()';
 
         $template = <<<'PHP'
 <?php
@@ -420,12 +417,12 @@ final class {{name}}Controller
 PHP;
 
         $updateStatement = $hasService
-            ? "\${$v['parameter']} = {$update};"
-            : "\${$v['parameter']}->update({$input});";
+            ? '$' . $v['parameter'] . ' = ' . $update . ';'
+            : '$' . $v['parameter'] . '->update(' . $input . ');';
 
         $show = $hasResource
             ? "new {$v['name']}Resource(\${$v['parameter']})"
-            : "\${$v['parameter']}";
+            : '$' . $v['parameter'];
 
         $constructor = $hasService
             ? "    use HttpResponses;\n\n    public function __construct(\n        private readonly {$v['name']}Service \$service,\n    ) {\n    }\n"
@@ -437,7 +434,7 @@ PHP;
             'parameter' => $v['parameter'],
             'imports' => implode(PHP_EOL, $imports),
             'serviceConstructor' => $constructor,
-            'index' => $hasResource ? str_replace('{{name}}Resource::collection(', "{$v['name']}Resource::collection(", $indexResult) : $index,
+            'index' => $hasResource ? "{$v['name']}Resource::collection({$index})" : $index,
             'requestStore' => $requestStore,
             'requestUpdate' => $requestUpdate,
             'create' => $hasResource ? "new {$v['name']}Resource({$create})" : $create,
@@ -659,10 +656,13 @@ PHP);
 
     private function render(string $template, array $variables): string
     {
-        $result = strtr($template, array_combine(
-            array_map(static fn (string $key): string => "{{{$key}}}", array_keys($variables)),
-            array_values($variables)
-        ));
+        $replacements = [];
+
+        foreach ($variables as $key => $value) {
+            $replacements["{{{$key}}}"] = (string) $value;
+        }
+
+        $result = strtr($template, $replacements);
 
         if (preg_match('/\{\{[^}]+\}\}/', $result) === 1) {
             throw new RuntimeException('Generator template contains an unresolved placeholder.');
