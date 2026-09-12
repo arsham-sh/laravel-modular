@@ -12,49 +12,71 @@ final class ModuleGenerator
 
     public function generate(string $name, array $components): void
     {
-        $name = Str::studly($name);
+        $name = Str::studly(trim($name));
+        if ($name === '') throw new RuntimeException('Module name cannot be empty.');
+
+        $components = ModuleComponents::validate($components);
+        if ($components === null) throw new RuntimeException('Invalid module component selection.');
+
         $root = base_path("Modules/{$name}");
-
-        if ($this->files->exists($root)) {
-            throw new RuntimeException("Module [{$name}] already exists.");
-        }
-
-        $components = ModuleComponents::normalize($components);
-        $this->sharedSupport();
+        if ($this->files->exists($root)) throw new RuntimeException("Module [{$name}] already exists.");
 
         try {
             $this->directory($root);
-            $this->directory("{$root}/Config");
-            $this->directory("{$root}/App/Providers");
-
-            foreach ($components as $component) {
-                $this->directory("{$root}/" . ModuleComponents::PATHS[$component]);
-            }
-
-            $this->file("{$root}/Config/config.php", "<?php\n\nreturn [\n    'enabled' => true,\n];\n");
+            $this->write("{$root}/Config/config.php", "<?php\n\nreturn ['enabled' => true];\n");
+            $this->sharedSupport();
             $this->provider($root, $name, $components);
-            $this->components($root, $name, $components);
-            $this->manifest($root, $name, $components);
+            $this->generateComponents($root, $name, $components);
+            $this->write("{$root}/module.json", json_encode([
+                'name' => $name,
+                'namespace' => "Modules\\{$name}",
+                'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
+                'version' => '1.0.0',
+                'description' => "{$name} module",
+                'enabled' => true,
+                'components' => array_values($components),
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
         } catch (\Throwable $e) {
-            if ($this->files->isDirectory($root)) {
-                $this->files->deleteDirectory($root);
-            }
-
+            if ($this->files->isDirectory($root)) $this->files->deleteDirectory($root);
             throw $e;
+        }
+    }
+
+    private function generateComponents(string $root, string $name, array $components): void
+    {
+        $v = [
+            'name' => $name,
+            'ns' => "Modules\\{$name}",
+            'param' => Str::camel($name),
+            'route' => Str::kebab(Str::pluralStudly($name)),
+        ];
+
+        foreach ($components as $component) {
+            match ($component) {
+                'models' => $this->model($root, $v, in_array('database', $components, true)),
+                'requests' => $this->requests($root, $v),
+                'services' => $this->service($root, $v),
+                'resources' => $this->resource($root, $v),
+                'policies' => $this->policy($root, $v),
+                'controllers' => $this->controller($root, $v, $components),
+                'database' => $this->database($root, $v),
+                'routes' => $this->routes($root, $v, $components),
+                'middleware' => $this->middleware($root, $v),
+                'console' => $this->console($root, $v),
+                'feature-tests' => $this->test($root, $v, 'Feature'),
+                'unit-tests' => $this->test($root, $v, 'Unit'),
+                'traits' => $this->trait($root, $v),
+                default => null,
+            };
         }
     }
 
     private function sharedSupport(): void
     {
-        $root = base_path('Modules/Shared');
-        $traitPath = "{$root}/App/Traits/HttpResponses.php";
+        $path = base_path('Modules/Shared/App/Traits/HttpResponses.php');
+        if ($this->files->exists($path)) return;
 
-        if ($this->files->exists($traitPath)) {
-            return;
-        }
-
-        $this->directory("{$root}/App/Traits");
-        $this->file($traitPath, <<<'PHP'
+        $this->write($path, <<<'PHP'
 <?php
 
 namespace Modules\Shared\App\Traits;
@@ -65,617 +87,140 @@ trait HttpResponses
 {
     protected function success(mixed $data = null, ?string $message = null, int $code = 200): JsonResponse
     {
-        return response()->json([
-            'status' => 'success',
-            'message' => $message,
-            'data' => $data,
-        ], $code);
+        return response()->json(['status' => 'success', 'message' => $message, 'data' => $data], $code);
     }
 
     protected function error(mixed $data = null, ?string $message = null, int $code = 500): JsonResponse
     {
-        return response()->json([
-            'status' => 'error',
-            'message' => $message,
-            'data' => $data,
-        ], $code);
+        return response()->json(['status' => 'error', 'message' => $message, 'data' => $data], $code);
     }
 }
 PHP);
-
-        $this->file("{$root}/module.json", json_encode([
-            'name' => 'Shared',
-            'namespace' => 'Modules\\Shared',
-            'provider' => null,
-            'version' => '1.0.0',
-            'description' => 'Shared module support',
-            'enabled' => true,
-            'components' => ['traits'],
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
     }
 
     private function provider(string $root, string $name, array $components): void
     {
-        $namespace = "Modules\\{$name}";
+        $ns = "Modules\\{$name}";
+        $imports = in_array('policies', $components, true) ? "use Illuminate\\Support\\Facades\\Gate;\n" : '';
         $boot = [];
+        if (in_array('routes', $components, true)) $boot[] = "        \$this->loadRoutesFrom(__DIR__ . '/../../Routes/api.php');";
+        if (in_array('database', $components, true)) $boot[] = "        \$this->loadMigrationsFrom(__DIR__ . '/../../Database/Migrations');";
+        if (in_array('policies', $components, true)) $boot[] = "        Gate::policy(\\{$ns}\\App\\Models\\{$name}::class, \\{$ns}\\App\\Policies\\{$name}Policy::class);";
+        if (in_array('console', $components, true)) $boot[] = "        \$this->commands([\\{$ns}\\App\\Console\\{$name}Command::class]);";
 
-        if (in_array('routes', $components, true)) {
-            $boot[] = "        \$this->loadRoutesFrom(__DIR__ . '/../../Routes/api.php');";
-        }
-
-        if (in_array('database', $components, true)) {
-            $boot[] = "        \$this->loadMigrationsFrom(__DIR__ . '/../../Database/Migrations');";
-        }
-
-        if (in_array('policies', $components, true)) {
-            $boot[] = "        Gate::policy(\\{$namespace}\\App\\Models\\{$name}::class, \\{$namespace}\\App\\Policies\\{$name}Policy::class);";
-        }
-
-        if (in_array('console', $components, true)) {
-            $boot[] = "        \$this->commands([\\{$namespace}\\App\\Console\\{$name}Command::class]);";
-        }
-
-        $imports = in_array('policies', $components, true)
-            ? "\nuse Illuminate\\Support\\Facades\\Gate;\n"
-            : '';
-
-        $this->file("{$root}/App/Providers/{$name}ServiceProvider.php", <<<PHP
-<?php
-
-namespace {$namespace}\\App\\Providers;
-
-use Illuminate\\Support\\ServiceProvider;{$imports}
-class {$name}ServiceProvider extends ServiceProvider
-{
-    public function register(): void
-    {
-        \$this->mergeConfigFrom(__DIR__ . '/../../Config/config.php', '{$this->configKey($name)}');
+        $this->write("{$root}/App/Providers/{$name}ServiceProvider.php", "<?php\n\nnamespace {$ns}\\App\\Providers;\n\nuse Illuminate\\Support\\ServiceProvider;\n{$imports}\nfinal class {$name}ServiceProvider extends ServiceProvider\n{\n    public function register(): void\n    {\n        \$this->mergeConfigFrom(__DIR__ . '/../../Config/config.php', '" . Str::snake(Str::pluralStudly($name)) . "');\n    }\n\n    public function boot(): void\n    {\n" . implode("\n", $boot) . "\n    }\n}\n");
     }
 
-    public function boot(): void
+    private function model(string $root, array $v, bool $database): void
     {
-{$this->lines($boot)}    }
-}
-PHP);
+        $factory = $database ? "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\n\n    use HasFactory;\n" : '';
+        $this->write("{$root}/App/Models/{$v['name']}.php", "<?php\n\nnamespace {$v['ns']}\\App\\Models;\n\nuse Illuminate\\Database\\Eloquent\\Model;\n{$factory}\nclass {$v['name']} extends Model\n{\n    protected \$fillable = ['name'];\n}\n");
     }
 
-    private function components(string $root, string $name, array $components): void
+    private function requests(string $root, array $v): void
     {
-        $namespace = "Modules\\{$name}";
-        $parameter = Str::camel($name);
-        $route = Str::kebab(Str::pluralStudly($name));
-        $variables = [
-            '__NS__' => $namespace,
-            '__NAME__' => $name,
-            '__PARAM__' => $parameter,
-            '__ROUTE__' => $route,
-        ];
-
-        if (in_array('models', $components, true)) {
-            $this->model($root, $name, $variables, in_array('database', $components, true));
-        }
-        if (in_array('requests', $components, true)) {
-            $this->requests($root, $name, $variables);
-        }
-        if (in_array('services', $components, true)) {
-            $this->service($root, $name, $variables);
-        }
-        if (in_array('resources', $components, true)) {
-            $this->resource($root, $name, $variables);
-        }
-        if (in_array('policies', $components, true)) {
-            $this->policy($root, $name, $variables);
-        }
-        if (in_array('controllers', $components, true)) {
-            if ($this->isBasic($components)) {
-                $this->basicController($root, $name, $variables);
-            } elseif (in_array('services', $components, true)) {
-                $this->serviceController($root, $name, $variables, in_array('resources', $components, true));
-            } else {
-                $this->normalController($root, $name, $variables, in_array('resources', $components, true));
-            }
-        }
-        if (in_array('database', $components, true)) {
-            $this->database($root, $name, $variables);
-        }
-        if (in_array('routes', $components, true)) {
-            $this->routes($root, $name, $variables, $this->isBasic($components));
-        }
-        if (in_array('middleware', $components, true)) {
-            $this->middleware($root, $name, $variables);
-        }
-        if (in_array('console', $components, true)) {
-            $this->console($root, $name, $variables);
-        }
-        if (in_array('feature-tests', $components, true)) {
-            $this->featureTest($root, $name, $variables);
-        }
-        if (in_array('unit-tests', $components, true)) {
-            $this->unitTest($root, $name, $variables);
-        }
-    }
-
-    private function model(string $root, string $name, array $variables, bool $database): void
-    {
-        $imports = $database ? "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\n" : '';
-        $factory = $database ? "    use HasFactory;\n\n" : '';
-
-        $this->template("{$root}/App/Models/{$name}.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Models;
-
-use Illuminate\Database\Eloquent\Model;
-__IMPORTS__
-class __NAME__ extends Model
-{
-__FACTORY__    protected $fillable = [
-        'name',
-    ];
-}
-PHP, $variables + [
-            '__IMPORTS__' => $imports,
-            '__FACTORY__' => $factory,
-        ]);
-    }
-
-    private function requests(string $root, string $name, array $variables): void
-    {
-        $path = "{$root}/App/Http/Requests";
-
         foreach (['Store', 'Update'] as $type) {
-            $this->template("{$path}/{$type}{$name}Request.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Http\Requests;
-
-use Illuminate\Foundation\Http\FormRequest;
-
-class __TYPE____NAME__Request extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        return [
-            'name' => ['required', 'string', 'max:255'],
-        ];
-    }
-}
-PHP, $variables + ['__TYPE__' => $type]);
+            $this->write("{$root}/App/Http/Requests/{$type}{$v['name']}Request.php", "<?php\n\nnamespace {$v['ns']}\\App\\Http\\Requests;\n\nuse Illuminate\\Foundation\\Http\\FormRequest;\n\nclass {$type}{$v['name']}Request extends FormRequest\n{\n    public function authorize(): bool { return true; }\n\n    public function rules(): array { return ['name' => ['required', 'string', 'max:255']]; }\n}\n");
         }
     }
 
-    private function service(string $root, string $name, array $variables): void
+    private function service(string $root, array $v): void
     {
-        $this->template("{$root}/App/Services/{$name}Service.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Services;
-
-use __NS__\App\Models\__NAME__;
-
-final class __NAME__Service
-{
-    public function paginate()
-    {
-        return __NAME__::query()->paginate();
+        $this->write("{$root}/App/Services/{$v['name']}Service.php", "<?php\n\nnamespace {$v['ns']}\\App\\Services;\n\nuse {$v['ns']}\\App\\Models\\{$v['name']};\n\nfinal class {$v['name']}Service\n{\n    public function paginate() { return {$v['name']}::query()->paginate(); }\n\n    public function create(array \$data): {$v['name']} { return {$v['name']}::create(\$data); }\n\n    public function update({$v['name']} \${$v['param']}, array \$data): {$v['name']} { \${$v['param']}->update(\$data); return \${$v['param']}->refresh(); }\n\n    public function delete({$v['name']} \${$v['param']}): void { \${$v['param']}->delete(); }\n}\n");
     }
 
-    public function create(array $data): __NAME__
+    private function resource(string $root, array $v): void
     {
-        return __NAME__::create($data);
+        $this->write("{$root}/App/Http/Resources/{$v['name']}Resource.php", "<?php\n\nnamespace {$v['ns']}\\App\\Http\\Resources;\n\nuse Illuminate\\Http\\Request;\nuse Illuminate\\Http\\Resources\\Json\\JsonResource;\n\nclass {$v['name']}Resource extends JsonResource\n{\n    public function toArray(Request \$request): array { return ['id' => \$this->id, 'name' => \$this->name, 'created_at' => \$this->created_at, 'updated_at' => \$this->updated_at]; }\n}\n");
     }
 
-    public function update(__NAME__ $__PARAM__, array $data): __NAME__
+    private function policy(string $root, array $v): void
     {
-        $__PARAM__->update($data);
-
-        return $__PARAM__->refresh();
+        $this->write("{$root}/App/Policies/{$v['name']}Policy.php", "<?php\n\nnamespace {$v['ns']}\\App\\Policies;\n\nuse {$v['ns']}\\App\\Models\\{$v['name']};\nuse Illuminate\\Contracts\\Auth\\Authenticatable;\n\nfinal class {$v['name']}Policy\n{\n    public function viewAny(Authenticatable \$user): bool { return true; }\n    public function view(Authenticatable \$user, {$v['name']} \${$v['param']}): bool { return true; }\n    public function create(Authenticatable \$user): bool { return true; }\n    public function update(Authenticatable \$user, {$v['name']} \${$v['param']}): bool { return true; }\n    public function delete(Authenticatable \$user, {$v['name']} \${$v['param']}): bool { return true; }\n}\n");
     }
 
-    public function delete(__NAME__ $__PARAM__): void
+    private function controller(string $root, array $v, array $components): void
     {
-        $__PARAM__->delete();
-    }
-}
-PHP, $variables);
+        $service = in_array('services', $components, true);
+        $requests = in_array('requests', $components, true);
+        $resource = in_array('resources', $components, true);
+        $imports = "use Modules\\Shared\\App\\Traits\\HttpResponses;\n";
+
+        if ($service) {
+            $imports .= "use {$v['ns']}\\App\\Services\\{$v['name']}Service;\n";
+            if ($requests) $imports .= "use {$v['ns']}\\App\\Http\\Requests\\Store{$v['name']}Request;\nuse {$v['ns']}\\App\\Http\\Requests\\Update{$v['name']}Request;\n";
+            else $imports .= "use Illuminate\\Http\\Request;\n";
+            if ($resource) $imports .= "use {$v['ns']}\\App\\Http\\Resources\\{$v['name']}Resource;\n";
+            $methods = $this->serviceMethods($v, $requests, $resource);
+            $constructor = "    public function __construct(private readonly {$v['name']}Service \$service) {}\n\n";
+        } else {
+            $imports = "use Illuminate\\Http\\Request;\nuse {$v['ns']}\\App\\Models\\{$v['name']};\n{$imports}";
+            if ($resource) $imports .= "use {$v['ns']}\\App\\Http\\Resources\\{$v['name']}Resource;\n";
+            $methods = $this->normalMethods($v, $resource);
+            $constructor = '';
+        }
+
+        $this->write("{$root}/App/Http/Controllers/{$v['name']}Controller.php", "<?php\n\nnamespace {$v['ns']}\\App\\Http\\Controllers;\n\n{$imports}\nfinal class {$v['name']}Controller\n{\n    use HttpResponses;\n\n{$constructor}{$methods}}\n");
     }
 
-    private function resource(string $root, string $name, array $variables): void
+    private function serviceMethods(array $v, bool $requests, bool $resource): string
     {
-        $this->template("{$root}/App/Http/Resources/{$name}Resource.php", <<<'PHP'
-<?php
+        $store = $requests ? "Store{$v['name']}Request" : 'Request';
+        $update = $requests ? "Update{$v['name']}Request" : 'Request';
+        $input = $requests ? '$request->validated()' : '$request->all()';
+        $index = $resource ? "{$v['name']}Resource::collection(\$this->service->paginate())" : '$this->service->paginate()';
+        $create = $resource ? "new {$v['name']}Resource(\$this->service->create({$input}))" : "\$this->service->create({$input})";
+        $updateCall = "\$this->service->update(\${$v['param']}, {$input})";
+        $updated = $resource ? "new {$v['name']}Resource({$updateCall})" : $updateCall;
+        $show = $resource ? "new {$v['name']}Resource(\${$v['param']})" : "\${$v['param']}";
 
-namespace __NS__\App\Http\Resources;
+        return "    public function index()\n    {\n        \${$v['param']}s = {$index};\n        return \$this->success(['{$v['param']}s' => \${$v['param']}s]);\n    }\n\n    public function store({$store} \$request)\n    {\n        \${$v['param']} = {$create};\n        return \$this->success(['{$v['param']}' => \${$v['param']}], '{$v['name']} created successfully', 201);\n    }\n\n    public function show({$v['name']} \${$v['param']})\n    {\n        return \$this->success(['{$v['param']}' => {$show}]);\n    }\n\n    public function update({$update} \$request, {$v['name']} \${$v['param']})\n    {\n        \${$v['param']} = {$updated};\n        return \$this->success(['{$v['param']}' => \${$v['param']}], '{$v['name']} updated successfully');\n    }\n\n    public function destroy({$v['name']} \${$v['param']})\n    {\n        \$this->service->delete(\${$v['param']});\n        return \$this->success(null, '{$v['name']} deleted successfully');\n    }\n\n";
+    }
 
-use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
-
-class __NAME__Resource extends JsonResource
-{
-    public function toArray(Request $request): array
+    private function normalMethods(array $v, bool $resource): string
     {
-        return [
-            'id' => $this->id,
-            'name' => $this->name,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
-        ];
-    }
-}
-PHP, $variables);
+        $index = $resource ? "{$v['name']}Resource::collection({$v['name']}::query()->paginate())" : "{$v['name']}::query()->paginate()";
+        $show = $resource ? "new {$v['name']}Resource(\${$v['param']})" : "\${$v['param']}";
+        return "    public function index() { \${$v['param']}s = {$index}; return \$this->success(['{$v['param']}s' => \${$v['param']}s]); }\n\n    public function store(Request \$request) { \${$v['param']} = {$v['name']}::create(\$request->all()); return \$this->success(['{$v['param']}' => \${$v['param']}], '{$v['name']} created successfully', 201); }\n\n    public function show({$v['name']} \${$v['param']}) { return \$this->success(['{$v['param']}' => {$show}]); }\n\n    public function update(Request \$request, {$v['name']} \${$v['param']}) { \${$v['param']}->update(\$request->all()); return \$this->success(['{$v['param']}' => \${$v['param']}->refresh()], '{$v['name']} updated successfully'); }\n\n    public function destroy({$v['name']} \${$v['param']}) { \${$v['param']}->delete(); return \$this->success(null, '{$v['name']} deleted successfully'); }\n\n";
     }
 
-    private function policy(string $root, string $name, array $variables): void
+    private function routes(string $root, array $v, array $components): void
     {
-        $this->template("{$root}/App/Policies/{$name}Policy.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Policies;
-
-use __NS__\App\Models\__NAME__;
-use Illuminate\Contracts\Auth\Authenticatable;
-
-final class __NAME__Policy
-{
-    public function viewAny(Authenticatable $user): bool { return true; }
-    public function view(Authenticatable $user, __NAME__ $__PARAM__): bool { return true; }
-    public function create(Authenticatable $user): bool { return true; }
-    public function update(Authenticatable $user, __NAME__ $__PARAM__): bool { return true; }
-    public function delete(Authenticatable $user, __NAME__ $__PARAM__): bool { return true; }
-}
-PHP, $variables);
+        $body = $this->isBasic($components)
+            ? "Route::get('{$v['route']}', [{$v['name']}Controller::class, 'index']);\nRoute::post('{$v['route']}', [{$v['name']}Controller::class, 'store']);"
+            : "Route::apiResource('{$v['route']}', {$v['name']}Controller::class);";
+        $this->write("{$root}/Routes/api.php", "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\nuse {$v['ns']}\\App\\Http\\Controllers\\{$v['name']}Controller;\n\n{$body}\n");
     }
 
-    private function basicController(string $root, string $name, array $variables): void
+    private function database(string $root, array $v): void
     {
-        $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
-<?php
+        $this->write("{$root}/Database/Migrations/" . date('Y_m_d_His') . "_create_{$v['route']}_table.php", "<?php\n\nuse Illuminate\\Database\\Migrations\\Migration;\nuse Illuminate\\Database\\Schema\\Blueprint;\nuse Illuminate\\Support\\Facades\\Schema;\n\nreturn new class extends Migration {\n    public function up(): void { Schema::create('{$v['route']}', function (Blueprint \$table) { \$table->id(); \$table->string('name'); \$table->timestamps(); }); }\n    public function down(): void { Schema::dropIfExists('{$v['route']}'); }\n};\n");
+        $this->write("{$root}/Database/Factories/{$v['name']}Factory.php", "<?php\n\nnamespace {$v['ns']}\\Database\\Factories;\n\nuse {$v['ns']}\\App\\Models\\{$v['name']};\nuse Illuminate\\Database\\Eloquent\\Factories\\Factory;\n\nclass {$v['name']}Factory extends Factory\n{\n    protected \$model = {$v['name']}::class;\n    public function definition(): array { return ['name' => fake()->name()]; }\n}\n");
+    }
 
-namespace __NS__\App\Http\Controllers;
-
-use Illuminate\Http\Request;
-use Modules\Shared\App\Traits\HttpResponses;
-
-final class __NAME__Controller
-{
-    use HttpResponses;
-
-    public function index()
+    private function middleware(string $root, array $v): void
     {
-        return $this->success([
-            'message' => '__NAME__ module is working.',
-        ]);
+        $this->write("{$root}/App/Http/Middleware/{$v['name']}Middleware.php", "<?php\n\nnamespace {$v['ns']}\\App\\Http\\Middleware;\n\nuse Closure;\nuse Illuminate\\Http\\Request;\nuse Symfony\\Component\\HttpFoundation\\Response;\n\nfinal class {$v['name']}Middleware\n{\n    public function handle(Request \$request, Closure \$next): Response { return \$next(\$request); }\n}\n");
     }
 
-    public function store(Request $request)
+    private function console(string $root, array $v): void
     {
-        return $this->success($request->validate([
-            'name' => ['required', 'string', 'max:255'],
-        ]));
-    }
-}
-PHP, $variables);
+        $this->write("{$root}/App/Console/{$v['name']}Command.php", "<?php\n\nnamespace {$v['ns']}\\App\\Console;\n\nuse Illuminate\\Console\\Command;\n\nfinal class {$v['name']}Command extends Command\n{\n    protected \$signature = '{$v['route']}:run';\n    protected \$description = 'Run the {$v['name']} module command.';\n    public function handle(): int { \$this->info('{$v['name']} command executed.'); return self::SUCCESS; }\n}\n");
     }
 
-    private function normalController(string $root, string $name, array $variables, bool $resource): void
+    private function test(string $root, array $v, string $type): void
     {
-        $resourceImport = $resource ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n" : '';
-        $index = $resource ? '__NAME__Resource::collection(__NAME__::query()->paginate())' : '$__PARAM__';
-        $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
+        $this->write("{$root}/Tests/{$type}/{$v['name']}Test.php", "<?php\n\nnamespace {$v['ns']}\\Tests\\{$type};\n\nuse Tests\\TestCase;\n\nclass {$v['name']}Test extends TestCase\n{\n    public function test_module_{$type}_test(): void { \$this->assertTrue(true); }\n}\n");
+    }
 
-        $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Http\Controllers;
-
-use __NS__\App\Models\__NAME__;
-use Illuminate\Http\Request;
-use Modules\Shared\App\Traits\HttpResponses;
-__RESOURCE_IMPORT__
-final class __NAME__Controller
-{
-    use HttpResponses;
-
-    public function index()
+    private function trait(string $root, array $v): void
     {
-        return $this->success(['__PARAM__s' => __INDEX__]);
+        $this->write("{$root}/App/Traits/{$v['name']}Trait.php", "<?php\n\nnamespace {$v['ns']}\\App\\Traits;\n\ntrait {$v['name']}Trait {}\n");
     }
 
-    public function store(Request $request)
+    private function isBasic(array $components): bool
     {
-        $__PARAM__ = __NAME__::create($request->all());
-
-        return $this->success(['__PARAM__' => $__PARAM__], '__NAME__ created successfully', 201);
-    }
-
-    public function show(__NAME__ $__PARAM__)
-    {
-        return $this->success(['__PARAM__' => __SHOW__]);
-    }
-
-    public function update(Request $request, __NAME__ $__PARAM__)
-    {
-        $__PARAM__->update($request->all());
-
-        return $this->success(['__PARAM__' => $__PARAM__->fresh()], '__NAME__ updated successfully');
-    }
-
-    public function destroy(__NAME__ $__PARAM__)
-    {
-        $__PARAM__->delete();
-
-        return $this->success(null, '__NAME__ deleted successfully');
-    }
-}
-PHP, $variables + [
-            '__RESOURCE_IMPORT__' => $resourceImport,
-            '__INDEX__' => str_replace('__NAME__', $name, $index),
-            '__SHOW__' => str_replace('__NAME__', $name, $show),
-        ]);
-    }
-
-    private function serviceController(string $root, string $name, array $variables, bool $resource): void
-    {
-        $resourceImport = $resource ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n" : '';
-        $index = $resource ? '__NAME__Resource::collection($this->service->paginate())' : '$this->service->paginate()';
-        $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
-        $created = $resource ? 'new __NAME__Resource($this->service->create($request->validated()))' : '$this->service->create($request->validated())';
-        $updated = $resource ? 'new __NAME__Resource($this->service->update($__PARAM__, $request->validated()))' : '$this->service->update($__PARAM__, $request->validated())';
-
-        $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Http\Controllers;
-
-use __NS__\App\Http\Requests\Store__NAME__Request;
-use __NS__\App\Http\Requests\Update__NAME__Request;
-use __NS__\App\Models\__NAME__;
-use __NS__\App\Services\__NAME__Service;
-use Modules\Shared\App\Traits\HttpResponses;
-__RESOURCE_IMPORT__
-final class __NAME__Controller
-{
-    use HttpResponses;
-
-    public function __construct(
-        private readonly __NAME__Service $service,
-    ) {
-    }
-
-    public function index()
-    {
-        $__PARAM__s = $this->service->paginate();
-
-        return $this->success([
-            '__PARAM__s' => $__PARAM__s,
-        ]);
-    }
-
-    public function store(Store__NAME__Request $request)
-    {
-        $__PARAM__ = __CREATED__;
-
-        return $this->success(
-            ['__PARAM__' => $__PARAM__],
-            '__NAME__ created successfully',
-            201
-        );
-    }
-
-    public function show(__NAME__ $__PARAM__)
-    {
-        return $this->success([
-            '__PARAM__' => __SHOW__,
-        ]);
-    }
-
-    public function update(Update__NAME__Request $request, __NAME__ $__PARAM__)
-    {
-        $__PARAM__ = __UPDATED__;
-
-        return $this->success(
-            ['__PARAM__' => $__PARAM__],
-            '__NAME__ updated successfully'
-        );
-    }
-
-    public function destroy(__NAME__ $__PARAM__)
-    {
-        $this->service->delete($__PARAM__);
-
-        return $this->success(
-            null,
-            '__NAME__ deleted successfully'
-        );
-    }
-}
-PHP, $variables + [
-            '__RESOURCE_IMPORT__' => $resourceImport,
-            '__INDEX__' => str_replace('__NAME__', $name, $index),
-            '__SHOW__' => str_replace('__NAME__', $name, $show),
-            '__CREATED__' => str_replace('__NAME__', $name, $created),
-            '__UPDATED__' => str_replace('__NAME__', $name, $updated),
-        ]);
-    }
-
-    private function routes(string $root, string $name, array $variables, bool $basic): void
-    {
-        $this->template("{$root}/Routes/api.php", <<<'PHP'
-<?php
-
-use Illuminate\Support\Facades\Route;
-use __NS__\App\Http\Controllers\__NAME__Controller;
-
-__ROUTES__
-PHP, $variables + [
-            '__ROUTES__' => $basic
-                ? "Route::get('__ROUTE__', [__NAME__Controller::class, 'index']);\nRoute::post('__ROUTE__', [__NAME__Controller::class, 'store']);"
-                : "Route::apiResource('__ROUTE__', __NAME__Controller::class);",
-        ]);
-    }
-
-    private function database(string $root, string $name, array $variables): void
-    {
-        $this->template("{$root}/Database/Migrations/" . date('Y_m_d_His') . "_create_" . $variables['__ROUTE__'] . "_table.php", <<<'PHP'
-<?php
-
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-
-return new class extends Migration
-{
-    public function up(): void
-    {
-        Schema::create('__ROUTE__', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->timestamps();
-        });
-    }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('__ROUTE__');
-    }
-};
-PHP, $variables);
-
-        $this->template("{$root}/Database/Factories/{$name}Factory.php", <<<'PHP'
-<?php
-
-namespace __NS__\Database\Factories;
-
-use __NS__\App\Models\__NAME__;
-use Illuminate\Database\Eloquent\Factories\Factory;
-
-/**
- * @extends Factory<__NAME__>
- */
-class __NAME__Factory extends Factory
-{
-    protected $model = __NAME__::class;
-
-    public function definition(): array
-    {
-        return [
-            'name' => fake()->name(),
-        ];
-    }
-}
-PHP, $variables);
-    }
-
-    private function middleware(string $root, string $name, array $variables): void
-    {
-        $this->template("{$root}/App/Http/Middleware/{$name}Middleware.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Http\Middleware;
-
-use Closure;
-use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\Response;
-
-final class __NAME__Middleware
-{
-    public function handle(Request $request, Closure $next): Response
-    {
-        return $next($request);
-    }
-}
-PHP, $variables);
-    }
-
-    private function console(string $root, string $name, array $variables): void
-    {
-        $this->template("{$root}/App/Console/{$name}Command.php", <<<'PHP'
-<?php
-
-namespace __NS__\App\Console;
-
-use Illuminate\Console\Command;
-
-final class __NAME__Command extends Command
-{
-    protected $signature = '__ROUTE__:run';
-    protected $description = 'Run the __NAME__ module command.';
-
-    public function handle(): int
-    {
-        $this->info('__NAME__ command executed.');
-
-        return self::SUCCESS;
-    }
-}
-PHP, $variables);
-    }
-
-    private function featureTest(string $root, string $name, array $variables): void
-    {
-        $this->template("{$root}/Tests/Feature/{$name}Test.php", <<<'PHP'
-<?php
-
-namespace __NS__\Tests\Feature;
-
-use Tests\TestCase;
-
-class __NAME__Test extends TestCase
-{
-    public function test_module_smoke_test(): void
-    {
-        $this->assertTrue(true);
-    }
-}
-PHP, $variables);
-    }
-
-    private function unitTest(string $root, string $name, array $variables): void
-    {
-        $this->template("{$root}/Tests/Unit/{$name}Test.php", <<<'PHP'
-<?php
-
-namespace __NS__\Tests\Unit;
-
-use Tests\TestCase;
-
-class __NAME__Test extends TestCase
-{
-    public function test_module_unit_test(): void
-    {
-        $this->assertTrue(true);
-    }
-}
-PHP, $variables);
-    }
-
-    private function manifest(string $root, string $name, array $components): void
-    {
-        $this->file("{$root}/module.json", json_encode([
-            'name' => $name,
-            'namespace' => "Modules\\{$name}",
-            'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
-            'version' => '1.0.0',
-            'description' => "{$name} module",
-            'enabled' => true,
-            'components' => array_values($components),
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
-    }
-
-    private function template(string $path, string $template, array $variables): void
-    {
-        $this->file($path, str_replace(array_keys($variables), array_values($variables), $template));
-    }
-
-    private function file(string $path, string $content): void
-    {
-        $this->files->ensureDirectoryExists(dirname($path));
-        $this->files->put($path, $content);
+        return $components === ModulePreset::Basic->components();
     }
 
     private function directory(string $path): void
@@ -683,18 +228,9 @@ PHP, $variables);
         $this->files->ensureDirectoryExists($path);
     }
 
-    private function lines(array $lines): string
+    private function write(string $path, string $content): void
     {
-        return $lines === [] ? '' : implode(PHP_EOL, $lines) . PHP_EOL;
-    }
-
-    private function configKey(string $name): string
-    {
-        return Str::snake(Str::pluralStudly($name));
-    }
-
-    private function isBasic(array $components): bool
-    {
-        return $components === ModulePreset::Basic->components();
+        $this->files->ensureDirectoryExists(dirname($path));
+        $this->files->put($path, $content);
     }
 }
