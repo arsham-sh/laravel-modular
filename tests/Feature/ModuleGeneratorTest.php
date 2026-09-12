@@ -27,10 +27,16 @@ class ModuleGeneratorTest extends TestCase
         $this->assertFileExists($this->modulePath . '/App/Http/Controllers/BasicExampleController.php');
         $this->assertFileExists($this->modulePath . '/Routes/api.php');
         $this->assertFileExists($this->modulePath . '/App/Providers/BasicExampleServiceProvider.php');
+        $this->assertFileExists(base_path('Modules/Shared/App/Traits/HttpResponses.php'));
         $this->assertFileDoesNotExist($this->modulePath . '/App/Models/BasicExample.php');
         $this->assertFileDoesNotExist($this->modulePath . '/App/Services/BasicExampleService.php');
         $this->assertFileDoesNotExist($this->modulePath . '/App/Http/Requests');
         $this->assertFileDoesNotExist($this->modulePath . '/Tests');
+
+        $routes = file_get_contents($this->modulePath . '/Routes/api.php');
+        $this->assertStringContainsString('use Modules\\BasicExample\\App\\Http\\Controllers\\BasicExampleController;', $routes);
+        $this->assertStringContainsString("Route::get('basic-examples', [BasicExampleController::class, 'index']);", $routes);
+        $this->assertStringContainsString("Route::post('basic-examples', [BasicExampleController::class, 'store']);", $routes);
     }
 
     public function test_normal_generation_creates_a_simple_database_backed_crud_module(): void
@@ -45,10 +51,16 @@ class ModuleGeneratorTest extends TestCase
         $this->assertFileDoesNotExist($this->modulePath . '/Tests');
 
         $controller = file_get_contents($this->modulePath . '/App/Http/Controllers/NormalExampleController.php');
+        $routes = file_get_contents($this->modulePath . '/Routes/api.php');
 
         $this->assertStringContainsString('Request $request', $controller);
         $this->assertStringContainsString('NormalExample::create($request->all())', $controller);
         $this->assertStringContainsString('$normalExample->update($request->all())', $controller);
+        $this->assertStringContainsString('use Modules\\Shared\\App\\Traits\\HttpResponses;', $controller);
+        $this->assertStringContainsString('use HttpResponses;', $controller);
+        $this->assertStringContainsString("Route::apiResource('normal-examples', NormalExampleController::class);", $routes);
+        $this->assertStringNotContainsString('__NAME__', $routes);
+        $this->assertStringNotContainsString('__ROUTE__', $routes);
         $this->assertStringNotContainsString('NormalExampleService', $controller);
     }
 
@@ -64,13 +76,24 @@ class ModuleGeneratorTest extends TestCase
         $storeRequest = file_get_contents($this->modulePath . '/App/Http/Requests/StoreAdvancedExampleRequest.php');
         $updateRequest = file_get_contents($this->modulePath . '/App/Http/Requests/UpdateAdvancedExampleRequest.php');
         $controller = file_get_contents($this->modulePath . '/App/Http/Controllers/AdvancedExampleController.php');
+        $routes = file_get_contents($this->modulePath . '/Routes/api.php');
 
         $this->assertStringContainsString("'name' => ['required', 'string', 'max:255']", $storeRequest);
         $this->assertStringContainsString("'name' => ['required', 'string', 'max:255']", $updateRequest);
+        $this->assertStringContainsString('use Modules\\Shared\\App\\Traits\\HttpResponses;', $controller);
+        $this->assertStringContainsString('use HttpResponses;', $controller);
         $this->assertStringContainsString('StoreAdvancedExampleRequest $request', $controller);
         $this->assertStringContainsString('UpdateAdvancedExampleRequest $request', $controller);
+        $this->assertStringContainsString('$this->service->paginate()', $controller);
         $this->assertStringContainsString('$this->service->create($request->validated())', $controller);
         $this->assertStringContainsString('$this->service->update($advancedExample, $request->validated())', $controller);
+        $this->assertStringContainsString('$this->service->delete($advancedExample)', $controller);
+        $this->assertStringContainsString("'AdvancedExample created successfully'", $controller);
+        $this->assertStringContainsString("'AdvancedExample updated successfully'", $controller);
+        $this->assertStringContainsString("'AdvancedExample deleted successfully'", $controller);
+        $this->assertStringContainsString("Route::apiResource('advanced-examples', AdvancedExampleController::class);", $routes);
+        $this->assertStringNotContainsString('__NAME__', $controller);
+        $this->assertStringNotContainsString('__PARAM__', $controller);
     }
 
     private function generate(string $name, array $components): void
