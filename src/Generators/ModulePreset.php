@@ -6,14 +6,16 @@ enum ModulePreset: string
 {
     case Basic = 'basic';
     case Normal = 'normal';
+    case Advanced = 'advanced';
     case All = 'all';
 
     public function description(): string
     {
         return match ($this) {
             self::Basic => 'Basic - controller, provider, config, and API routes',
-            self::Normal => 'Normal - database-backed CRUD module with request, model, service, and tests',
-            self::All => 'All - normal plus resources, policies, database, middleware, console, and tests',
+            self::Normal => 'Normal - database-backed CRUD with a simple controller',
+            self::Advanced => 'Advanced - normal plus form requests, service, and feature tests',
+            self::All => 'All - advanced plus resources, policies, database, middleware, console, and tests',
         };
     }
 
@@ -22,8 +24,11 @@ enum ModulePreset: string
         return match ($this) {
             self::Basic => ['controllers', 'routes'],
             self::Normal => [
+                'controllers', 'models', 'database', 'routes',
+            ],
+            self::Advanced => [
                 'controllers', 'requests', 'models', 'services', 'database', 'routes',
-                'feature-tests', 'unit-tests',
+                'feature-tests',
             ],
             self::All => [
                 'controllers', 'requests', 'models', 'services', 'resources', 'policies',
