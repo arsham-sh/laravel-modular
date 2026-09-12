@@ -13,9 +13,18 @@
         "illuminate/filesystem": "^13.0",
         "illuminate/support": "^13.0"
     },
+    "require-dev": {
+        "orchestra/testbench": "^11.2",
+        "phpunit/phpunit": "^12.5"
+    },
     "autoload": {
         "psr-4": {
             "Arsham\\LaravelModular\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Arsham\\LaravelModular\\Tests\\": "tests/"
         }
     },
     "extra": {
@@ -24,6 +33,9 @@
                 "Arsham\\LaravelModular\\LaravelModularServiceProvider"
             ]
         }
+    },
+    "scripts": {
+        "test": "phpunit"
     },
     "minimum-stability": "stable",
     "prefer-stable": true
