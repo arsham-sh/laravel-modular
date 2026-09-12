@@ -3,6 +3,7 @@
 namespace Arsham\LaravelModular;
 
 use Arsham\LaravelModular\Console\MakeModuleCommand;
+use Arsham\LaravelModular\Console\MakeModuleControllerCommand;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\ServiceProvider;
 
@@ -16,6 +17,7 @@ class LaravelModularServiceProvider extends ServiceProvider
 
         $this->commands([
             MakeModuleCommand::class,
+            MakeModuleControllerCommand::class,
         ]);
     }
 
