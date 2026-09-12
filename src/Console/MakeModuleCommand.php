@@ -63,7 +63,6 @@ class MakeModuleCommand extends Command
             $provider .= "        \\$this->loadMigrationsFrom(__DIR__ . '/../../Database/Migrations');\n";
         }
         $provider .= "    }\n}\n";
-
         $files->put("{$modulePath}/App/Providers/{$name}ServiceProvider.php", $provider);
 
         if (in_array('controllers', $components, true)) {
@@ -154,14 +153,12 @@ class MakeModuleCommand extends Command
 
         $selected = $this->choice(
             'Which components should be generated?',
-            array_keys($available),
+            $available,
             null,
             null,
             true
         );
 
-        return array_values(array_intersect($available, $selected))
-            ? array_values(array_intersect($selected, $available))
-            : [];
+        return array_values(array_intersect($selected, $available));
     }
 }
