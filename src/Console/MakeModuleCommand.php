@@ -68,7 +68,6 @@ class MakeModuleCommand extends Command
         }
 
         $components = $this->components();
-
         if ($components === null) {
             return self::FAILURE;
         }
@@ -86,7 +85,6 @@ class MakeModuleCommand extends Command
         $this->createManifest($files, $modulePath, $name, $components);
 
         $this->info("Module [{$name}] created successfully.");
-
         return self::SUCCESS;
     }
 
@@ -105,7 +103,6 @@ class MakeModuleCommand extends Command
         }
 
         $preset = $this->option('preset');
-
         if ($this->option('minimal')) {
             $preset = 'minimal';
         }
@@ -146,7 +143,6 @@ class MakeModuleCommand extends Command
     private function invalidPreset(string $preset): ?array
     {
         $this->error("Unknown preset [{$preset}]. Use minimal, normal, or all.");
-
         return null;
     }
 
@@ -158,7 +154,6 @@ class MakeModuleCommand extends Command
         if ($invalid !== []) {
             $this->error('Unknown component(s): ' . implode(', ', $invalid));
             $this->line('Available: ' . implode(', ', array_keys($this->paths)));
-
             return null;
         }
 
@@ -175,6 +170,10 @@ class MakeModuleCommand extends Command
         }
 
         if (in_array('resources', $components, true)) {
+            $components[] = 'models';
+        }
+
+        if (in_array('database', $components, true)) {
             $components[] = 'models';
         }
 
@@ -195,6 +194,9 @@ class MakeModuleCommand extends Command
         $routeLoader = in_array('routes', $components, true)
             ? "        \$this->loadRoutesFrom(__DIR__ . '/../../Routes/api.php');\n"
             : '';
+        $migrationLoader = in_array('database', $components, true)
+            ? "        \$this->loadMigrationsFrom(__DIR__ . '/../../Database/Migrations');\n"
+            : '';
 
         $content = <<<PHP
 <?php
@@ -214,7 +216,7 @@ class {$name}ServiceProvider extends ServiceProvider
     /** Bootstrap module resources. */
     public function boot(): void
     {
-{$routeLoader}    }
+{$routeLoader}{$migrationLoader}    }
 }
 PHP;
 
@@ -235,6 +237,7 @@ PHP;
         ];
 
         if (in_array('models', $components, true)) {
+            $database = in_array('database', $components, true);
             $this->writeTemplate($files, "{$modulePath}/App/Models/{$name}.php", <<<'PHP'
 <?php
 
@@ -249,10 +252,10 @@ __FACTORY_CODE__    /** The attributes that can be mass assigned. */
 }
 PHP
             , $vars + [
-                '__FACTORY_USE__' => in_array('database', $components, true)
+                '__FACTORY_USE__' => $database
                     ? "use Illuminate\\Database\\Eloquent\\Factories\\Factory;\nuse Illuminate\\Database\\Eloquent\\Factories\\HasFactory;"
                     : '',
-                '__FACTORY_CODE__' => in_array('database', $components, true)
+                '__FACTORY_CODE__' => $database
                     ? "    use HasFactory;\n\n    /** Return the module's factory for this model. */\n    protected static function newFactory(): Factory\n    {\n        return \\{$namespace}\\Database\\Factories\\{$name}Factory::new();\n    }\n\n"
                     : '',
             ]);
@@ -591,7 +594,6 @@ PHP
     private function createHttpResponsesTrait(Filesystem $files, string $modulePath, string $namespace): void
     {
         $path = "{$modulePath}/App/Traits/HttpResponses.php";
-
         $files->makeDirectory(dirname($path), 0755, true);
 
         $this->writeFile($files, $path, <<<PHP
@@ -639,11 +641,7 @@ PHP);
             'components' => $components,
         ];
 
-        $this->writeFile(
-            $files,
-            "{$modulePath}/module.json",
-            json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL
-        );
+        $this->writeFile($files, "{$modulePath}/module.json", json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
     }
 
     /** Return the module configuration key. */
