@@ -12,9 +12,9 @@ class MakeModuleCommand extends Command
 {
     protected $signature = 'module:make
         {name : The name of the module}
-        {--preset= : Generation preset: minimal, normal, or all}
+        {--preset= : Generation preset: basic, normal, or all}
         {--components=* : Generate specific components instead of a preset}
-        {--minimal : Backward-compatible alias for --preset=minimal}
+        {--basic : Backward-compatible alias for --preset=basic}
         {--no-prompts : Skip interactive selection and use the normal preset}';
 
     protected $description = 'Create a Laravel module';
@@ -47,7 +47,7 @@ class MakeModuleCommand extends Command
             return $this->validated($requested);
         }
 
-        $preset = $this->option('minimal') ? ModulePreset::Minimal->value : $this->option('preset');
+        $preset = $this->option('basic') ? ModulePreset::Basic->value : $this->option('preset');
         if ($preset !== null) {
             return $this->preset($preset);
         }
@@ -69,7 +69,7 @@ class MakeModuleCommand extends Command
     {
         $preset = ModulePreset::tryFrom(Str::lower(trim($value)));
         if ($preset === null) {
-            $this->error("Unknown preset [{$value}]. Use minimal, normal, or all.");
+            $this->error("Unknown preset [{$value}]. Use basic, normal, or all.");
             return null;
         }
 
