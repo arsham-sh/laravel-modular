@@ -308,25 +308,22 @@ PHP, $variables);
 
 namespace __NS__\App\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 final class __NAME__Controller
 {
-    public function index(): JsonResponse
+    public function index(): array
     {
-        return response()->json([
+        return [
             'message' => '__NAME__ module is working.',
-        ]);
+        ];
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request): array
     {
-        $validated = $request->validate([
+        return $request->validate([
             'name' => ['required', 'string', 'max:255'],
         ]);
-
-        return response()->json($validated, 201);
     }
 }
 PHP, $variables);
@@ -347,7 +344,6 @@ PHP, $variables);
 
 namespace __NS__\App\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
 use __NS__\App\Http\Requests\__NAME__Request;
 use __NS__\App\Models\__NAME__;
 use __NS__\App\Services\__NAME__Service;
@@ -359,36 +355,31 @@ final class __NAME__Controller
     ) {
     }
 
-    public function index(): JsonResponse
+    public function index()
     {
-        return response()->json(__INDEX__);
+        return __INDEX__;
     }
 
-    public function store(__NAME__Request $request): JsonResponse
+    public function store(__NAME__Request $request)
     {
-        return response()->json(
-            $this->service->create($request->validated()),
-            201
-        );
+        return $this->service->create($request->validated());
     }
 
-    public function show(__NAME__ $__PARAM__): JsonResponse
+    public function show(__NAME__ $__PARAM__)
     {
-        return response()->json(__SHOW__);
+        return __SHOW__;
     }
 
-    public function update(__NAME__Request $request, __NAME__ $__PARAM__): JsonResponse
+    public function update(__NAME__Request $request, __NAME__ $__PARAM__)
     {
-        return response()->json(
-            $this->service->update($__PARAM__, $request->validated())
-        );
+        return $this->service->update($__PARAM__, $request->validated());
     }
 
-    public function destroy(__NAME__ $__PARAM__): JsonResponse
+    public function destroy(__NAME__ $__PARAM__)
     {
         $this->service->delete($__PARAM__);
 
-        return response()->json(null, 204);
+        return response()->noContent();
     }
 }
 PHP, $variables + [
