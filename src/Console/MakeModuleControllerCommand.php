@@ -37,12 +37,8 @@ class MakeModuleControllerCommand extends Command
         }
 
         $files->makeDirectory($directory, 0755, true);
-
         $this->writeController($files, $path, $namespace, $name);
-
-        if ($this->option('resource')) {
-            $this->writeResponsesTrait($files, $modulePath, $namespace);
-        }
+        $this->writeResponsesTrait($files, $modulePath, $namespace);
 
         $this->info("Controller [{$name}Controller] created in module [{$module}].");
         return self::SUCCESS;
@@ -118,7 +114,7 @@ PHP
         $files->put($path, $content);
     }
 
-    /** Generate the module response helper used by resource controllers. */
+    /** Generate the module response helper used by controllers. */
     private function writeResponsesTrait(Filesystem $files, string $modulePath, string $namespace): void
     {
         $path = "{$modulePath}/App/Traits/HttpResponses.php";
