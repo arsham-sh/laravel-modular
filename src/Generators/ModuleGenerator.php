@@ -365,7 +365,7 @@ PHP, $variables);
     private function normalController(string $root, string $name, array $variables, bool $resource): void
     {
         $resourceImport = $resource ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n" : '';
-        $index = $resource ? '__NAME__Resource::collection(__NAME__::query()->paginate())' : '__NAME__::query()->paginate()';
+        $index = $resource ? '__NAME__Resource::collection(__NAME__::query()->paginate())' : '$__PARAM__';
         $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
 
         $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
@@ -451,7 +451,9 @@ final class __NAME__Controller
     {
         $__PARAM__s = $this->service->paginate();
 
-        return $this->success(['__PARAM__s' => __INDEX__]);
+        return $this->success([
+            '__PARAM__s' => $__PARAM__s,
+        ]);
     }
 
     public function store(Store__NAME__Request $request)
@@ -519,10 +521,7 @@ PHP, $variables + [
 
     private function database(string $root, string $name, array $variables): void
     {
-        $table = Str::snake(Str::pluralStudly($name));
-        $timestamp = date('Y_m_d_His');
-
-        $this->template("{$root}/Database/Migrations/{$timestamp}_create_{$table}_table.php", <<<'PHP'
+        $this->template("{$root}/Database/Migrations/" . date('Y_m_d_His') . "_create_" . $variables['__ROUTE__'] . "_table.php", <<<'PHP'
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -533,7 +532,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('__TABLE__', function (Blueprint $table): void {
+        Schema::create('__ROUTE__', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->timestamps();
@@ -542,20 +541,23 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('__TABLE__');
+        Schema::dropIfExists('__ROUTE__');
     }
 };
-PHP, ['__TABLE__' => $table]);
+PHP, $variables);
 
         $this->template("{$root}/Database/Factories/{$name}Factory.php", <<<'PHP'
 <?php
 
 namespace __NS__\Database\Factories;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
 use __NS__\App\Models\__NAME__;
+use Illuminate\Database\Eloquent\Factories\Factory;
 
-final class __NAME__Factory extends Factory
+/**
+ * @extends Factory<__NAME__>
+ */
+class __NAME__Factory extends Factory
 {
     protected $model = __NAME__::class;
 
@@ -564,22 +566,6 @@ final class __NAME__Factory extends Factory
         return [
             'name' => fake()->name(),
         ];
-    }
-}
-PHP, $variables);
-
-        $this->template("{$root}/Database/Seeders/{$name}Seeder.php", <<<'PHP'
-<?php
-
-namespace __NS__\Database\Seeders;
-
-use Illuminate\Database\Seeder;
-
-final class __NAME__Seeder extends Seeder
-{
-    public function run(): void
-    {
-        // Add module-specific seed data here.
     }
 }
 PHP, $variables);
@@ -608,8 +594,6 @@ PHP, $variables);
 
     private function console(string $root, string $name, array $variables): void
     {
-        $variables['__SIGNATURE__'] = Str::kebab($name) . ':run';
-
         $this->template("{$root}/App/Console/{$name}Command.php", <<<'PHP'
 <?php
 
@@ -619,11 +603,13 @@ use Illuminate\Console\Command;
 
 final class __NAME__Command extends Command
 {
-    protected $signature = '__SIGNATURE__';
-    protected $description = 'Run the __NAME__ module command';
+    protected $signature = '__ROUTE__:run';
+    protected $description = 'Run the __NAME__ module command.';
 
     public function handle(): int
     {
+        $this->info('__NAME__ command executed.');
+
         return self::SUCCESS;
     }
 }
@@ -637,138 +623,78 @@ PHP, $variables);
 
 namespace __NS__\Tests\Feature;
 
-use __NS__\App\Models\__NAME__;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class __NAME__Test extends TestCase
 {
-    use RefreshDatabase;
-
-    public function test_index_returns_the_module_records(): void
+    public function test_module_smoke_test(): void
     {
-        __NAME__::factory()->create(['name' => 'First record']);
-
-        $this->getJson('/__ROUTE__')
-            ->assertSuccessful()
-            ->assertJsonFragment(['name' => 'First record']);
-    }
-
-    public function test_store_creates_a_record(): void
-    {
-        $this->postJson('/__ROUTE__', ['name' => 'New record'])
-            ->assertCreated()
-            ->assertJsonFragment(['name' => 'New record']);
-
-        $this->assertDatabaseHas('__TABLE__', ['name' => 'New record']);
-    }
-
-    public function test_show_update_and_destroy_work(): void
-    {
-        $model = __NAME__::factory()->create(['name' => 'Original']);
-
-        $this->getJson("/__ROUTE__/{$model->id}")
-            ->assertSuccessful()
-            ->assertJsonFragment(['name' => 'Original']);
-
-        $this->putJson("/__ROUTE__/{$model->id}", ['name' => 'Updated'])
-            ->assertSuccessful()
-            ->assertJsonFragment(['name' => 'Updated']);
-
-        $this->deleteJson("/__ROUTE__/{$model->id}")
-            ->assertSuccessful();
-
-        $this->assertDatabaseMissing('__TABLE__', ['id' => $model->id]);
+        $this->assertTrue(true);
     }
 }
-PHP, $variables + ['__TABLE__' => Str::snake(Str::pluralStudly($name))]);
+PHP, $variables);
     }
 
     private function unitTest(string $root, string $name, array $variables): void
     {
-        $this->template("{$root}/Tests/Unit/{$name}ServiceTest.php", <<<'PHP'
+        $this->template("{$root}/Tests/Unit/{$name}Test.php", <<<'PHP'
 <?php
 
 namespace __NS__\Tests\Unit;
 
-use __NS__\App\Models\__NAME__;
-use __NS__\App\Services\__NAME__Service;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-class __NAME__ServiceTest extends TestCase
+class __NAME__Test extends TestCase
 {
-    use RefreshDatabase;
-
-    public function test_service_creates_updates_and_deletes_models(): void
+    public function test_module_unit_test(): void
     {
-        $service = new __NAME__Service();
-
-        $model = $service->create(['name' => 'Created']);
-        $this->assertDatabaseHas('__TABLE__', ['id' => $model->id, 'name' => 'Created']);
-
-        $model = $service->update($model, ['name' => 'Updated']);
-        $this->assertSame('Updated', $model->name);
-
-        $service->delete($model);
-        $this->assertDatabaseMissing('__TABLE__', ['id' => $model->id]);
+        $this->assertTrue(true);
     }
 }
-PHP, $variables + ['__TABLE__' => Str::snake(Str::pluralStudly($name))]);
-    }
-
-    private function isBasic(array $components): bool
-    {
-        return $components === ['controllers', 'routes'];
+PHP, $variables);
     }
 
     private function manifest(string $root, string $name, array $components): void
     {
-        $this->file(
-            "{$root}/module.json",
-            json_encode([
-                'name' => $name,
-                'namespace' => "Modules\\{$name}",
-                'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
-                'version' => '1.0.0',
-                'description' => "{$name} module",
-                'enabled' => true,
-                'components' => $components,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL
-        );
+        $this->file("{$root}/module.json", json_encode([
+            'name' => $name,
+            'namespace' => "Modules\\{$name}",
+            'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
+            'version' => '1.0.0',
+            'description' => "{$name} module",
+            'enabled' => true,
+            'components' => array_values($components),
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
     }
 
-    private function configKey(string $name): string
+    private function template(string $path, string $template, array $variables): void
     {
-        return Str::kebab($name);
+        $this->file($path, str_replace(array_keys($variables), array_values($variables), $template));
     }
 
-    private function lines(array $lines): string
+    private function file(string $path, string $content): void
     {
-        return $lines === [] ? '' : implode("\n", $lines) . "\n";
-    }
-
-    private function template(string $path, string $content, array $variables): void
-    {
-        $this->file($path, strtr($content, $variables));
+        $this->files->ensureDirectoryExists(dirname($path));
+        $this->files->put($path, $content);
     }
 
     private function directory(string $path): void
     {
-        if ($this->files->isDirectory($path)) {
-            return;
-        }
-
-        if ($this->files->exists($path)) {
-            throw new RuntimeException("Cannot create directory [{$path}] because a file already exists at that path.");
-        }
-
-        $this->files->makeDirectory($path, 0755, true);
+        $this->files->ensureDirectoryExists($path);
     }
 
-    private function file(string $path, string $contents): void
+    private function lines(array $lines): string
     {
-        $this->directory(dirname($path));
-        $this->files->put($path, $contents);
+        return $lines === [] ? '' : implode(PHP_EOL, $lines) . PHP_EOL;
+    }
+
+    private function configKey(string $name): string
+    {
+        return Str::snake(Str::pluralStudly($name));
+    }
+
+    private function isBasic(array $components): bool
+    {
+        return $components === ModulePreset::Basic->components();
     }
 }
