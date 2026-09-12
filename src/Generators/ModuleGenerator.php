@@ -100,7 +100,9 @@ use Illuminate\Database\Eloquent\Model;
 __IMPORTS__
 class __NAME__ extends Model
 {
-__FACTORY__    protected $guarded = [];
+__FACTORY__    protected $fillable = [
+        'name',
+    ];
 }
 PHP, $v + [
                 '__IMPORTS__' => $factory ? "use Illuminate\\Database\\Eloquent\\Factories\\Factory;\nuse Illuminate\\Database\\Eloquent\\Factories\\HasFactory;\n" : '',
@@ -118,9 +120,17 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class __NAME__Request extends FormRequest
 {
-    public function authorize(): bool { return true; }
+    public function authorize(): bool
+    {
+        return true;
+    }
 
-    public function rules(): array { return []; }
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+        ];
+    }
 }
 PHP, $v);
         }
@@ -131,9 +141,26 @@ PHP, $v);
 
 namespace __NS__\App\Services;
 
+use __NS__\App\Models\__NAME__;
+
 class __NAME__Service
 {
-    // Add the module's business logic here.
+    public function create(array $data): __NAME__
+    {
+        return __NAME__::create($data);
+    }
+
+    public function update(__NAME__ $__PARAM__, array $data): __NAME__
+    {
+        $__PARAM__->update($data);
+
+        return $__PARAM__->refresh();
+    }
+
+    public function delete(__NAME__ $__PARAM__): void
+    {
+        $__PARAM__->delete();
+    }
 }
 PHP, $v);
         }
@@ -178,8 +205,11 @@ PHP, $v);
         }
 
         if (in_array('controllers', $components, true)) {
-            $this->controller($root, $name, $ns, $param, in_array('resources', $components, true));
-            $this->responses($root, $ns);
+            if ($this->isBasic($components)) {
+                $this->basicController($root, $name, $ns, $route);
+            } else {
+                $this->controller($root, $name, $ns, $param, in_array('resources', $components, true), in_array('services', $components, true));
+            }
         }
 
         if (in_array('database', $components, true)) {
@@ -276,11 +306,62 @@ PHP, $v);
         }
     }
 
-    private function controller(string $root, string $name, string $ns, string $param, bool $resource): void
+    private function isBasic(array $components): bool
+    {
+        return $components === ['controllers', 'routes'];
+    }
+
+    private function basicController(string $root, string $name, string $ns, string $route): void
+    {
+        $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
+<?php
+
+namespace __NS__\App\Http\Controllers;
+
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class __NAME__Controller
+{
+    public function index(): JsonResponse
+    {
+        return response()->json([
+            'message' => '__NAME__ module is working.',
+        ]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        // Keep small module-specific logic here until it becomes worth extracting.
+        return response()->json($validated, 201);
+    }
+}
+PHP, ['__NS__' => $ns, '__NAME__' => $name, '__ROUTE__' => $route]);
+    }
+
+    private function controller(string $root, string $name, string $ns, string $param, bool $resource, bool $service): void
     {
         $resourceUse = $resource ? "use {$ns}\\App\\Http\\Resources\\{$name}Resource;\n" : '';
+        $serviceUse = $service ? "use {$ns}\\App\\Services\\{$name}Service;\n" : '';
         $index = $resource ? "{$name}Resource::collection({$name}::query()->paginate())" : "{$name}::query()->paginate()";
         $show = $resource ? "new {$name}Resource(\${$param})" : "\${$param}";
+        $store = $service
+            ? "        \$model = \$this->service->create(\$request->validated());\n        return \$this->success(\$model, 'Created successfully.', 201);"
+            : "        \$model = {$name}::create(\$request->validated());\n        return \$this->success(\$model, 'Created successfully.', 201);";
+        $update = $service
+            ? "        return \$this->success(\$this->service->update(\${$param}, \$request->validated()), 'Updated successfully.');"
+            : "        \${$param}->update(\$request->validated());\n        return \$this->success({$show}, 'Updated successfully.');";
+        $delete = $service
+            ? "        \$this->service->delete(\${$param});"
+            : "        \${$param}->delete();";
+        $constructor = $service
+            ? "    public function __construct(\n        private readonly {$name}Service \$service,\n    ) {\n    }\n\n"
+            : '';
+
         $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
 <?php
 
@@ -288,22 +369,21 @@ namespace __NS__\App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use __NS__\App\Http\Requests\__NAME__Request;
-__RESOURCE__use __NS__\App\Models\__NAME__;
+__RESOURCE____SERVICE__use __NS__\App\Models\__NAME__;
 use __NS__\App\Traits\HttpResponses;
 
 class __NAME__Controller
 {
     use HttpResponses;
 
-    public function index(): JsonResponse
+__CONSTRUCTOR__    public function index(): JsonResponse
     {
         return $this->success(__INDEX__);
     }
 
     public function store(__NAME__Request $request): JsonResponse
     {
-        $model = __NAME__::create($request->validated());
-        return $this->success($model, 'Created successfully.', 201);
+__STORE__
     }
 
     public function show(__NAME__ $__PARAM__): JsonResponse
@@ -313,25 +393,32 @@ class __NAME__Controller
 
     public function update(__NAME__Request $request, __NAME__ $__PARAM__): JsonResponse
     {
-        $__PARAM__->update($request->validated());
-        return $this->success(__SHOW__, 'Updated successfully.');
+__UPDATE__
     }
 
     public function destroy(__NAME__ $__PARAM__): JsonResponse
     {
-        $__PARAM__->delete();
-        return $this->success(null, 'Deleted successfully.');
+__DELETE__
+        return $this->success(null, 'Deleted successfully.', 204);
     }
 }
 PHP, [
             '__NS__' => $ns, '__NAME__' => $name, '__PARAM__' => $param,
-            '__RESOURCE__' => $resourceUse, '__INDEX__' => $index, '__SHOW__' => $show,
+            '__RESOURCE__' => $resourceUse, '__SERVICE__' => $serviceUse,
+            '__INDEX__' => $index, '__SHOW__' => $show, '__STORE__' => $store,
+            '__UPDATE__' => $update, '__DELETE__' => $delete, '__CONSTRUCTOR__' => $constructor,
         ]);
+
+        if (!$service) {
+            $this->file("{$root}/App/Traits/HttpResponses.php", $this->httpResponses($ns));
+        } else {
+            $this->file("{$root}/App/Traits/HttpResponses.php", $this->httpResponses($ns));
+        }
     }
 
-    private function responses(string $root, string $ns): void
+    private function httpResponses(string $ns): string
     {
-        $this->template("{$root}/App/Traits/HttpResponses.php", <<<'PHP'
+        return strtr(<<<'PHP'
 <?php
 
 namespace __NS__\App\Traits;
@@ -370,6 +457,7 @@ return new class extends Migration
     {
         Schema::create('__TABLE__', function (Blueprint $table): void {
             $table->id();
+            $table->string('name');
             $table->timestamps();
         });
     }
@@ -394,7 +482,9 @@ class __NAME__Factory extends Factory
 
     public function definition(): array
     {
-        return [];
+        return [
+            'name' => fake()->name(),
+        ];
     }
 }
 PHP, $v);
