@@ -22,7 +22,6 @@ class MakeModuleCommand extends Command
 
         if ($files->exists($modulePath)) {
             $this->error("Module [{$name}] already exists.");
-
             return self::FAILURE;
         }
 
@@ -42,7 +41,6 @@ class MakeModuleCommand extends Command
         ];
 
         $components = $this->components(array_keys($available));
-
         if ($components === null) {
             return self::FAILURE;
         }
@@ -54,252 +52,84 @@ class MakeModuleCommand extends Command
             $files->makeDirectory("{$modulePath}/{$available[$component]}", 0755, true);
         }
 
-        $files->put("{$modulePath}/Config/config.php", <<<PHP
-<?php
+        $files->put("{$modulePath}/Config/config.php", "<?php\n\nreturn [\n    'enabled' => true,\n];\n");
 
-return [
-    'enabled' => true,
-];
-PHP
-        . PHP_EOL);
-
-        $provider = <<<PHP
-<?php
-
-namespace Modules\\{$name}\\App\\Providers;
-
-use Illuminate\\Support\\ServiceProvider;
-
-class {$name}ServiceProvider extends ServiceProvider
-{
-    public function register(): void
-    {
-        \$this->mergeConfigFrom(__DIR__ . '/../../Config/config.php', '{$name}');
-    }
-
-    public function boot(): void
-    {
-PHP;
+        $provider = "<?php\n\nnamespace Modules\\{$name}\\App\\Providers;\n\nuse Illuminate\\Support\\ServiceProvider;\n\nclass {$name}ServiceProvider extends ServiceProvider\n{\n    public function register(): void\n    {\n        \\$this->mergeConfigFrom(__DIR__ . '/../../Config/config.php', '{$name}');\n    }\n\n    public function boot(): void\n    {\n";
 
         if (in_array('routes', $components, true)) {
             $provider .= "        \\$this->loadRoutesFrom(__DIR__ . '/../../Routes/api.php');\n";
         }
-
         if (in_array('migrations', $components, true)) {
             $provider .= "        \\$this->loadMigrationsFrom(__DIR__ . '/../../Database/Migrations');\n";
         }
-
         $provider .= "    }\n}\n";
 
         $files->put("{$modulePath}/App/Providers/{$name}ServiceProvider.php", $provider);
 
         if (in_array('controllers', $components, true)) {
-            $files->put("{$modulePath}/App/Http/Controllers/{$name}Controller.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\App\\Http\\Controllers;
-
-use Illuminate\\Http\\JsonResponse;
-
-class {$name}Controller
-{
-    public function index(): JsonResponse
-    {
-        return response()->json([]);
-    }
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/App/Http/Controllers/{$name}Controller.php", "<?php\n\nnamespace Modules\\{$name}\\App\\Http\\Controllers;\n\nuse Illuminate\\Http\\JsonResponse;\n\nclass {$name}Controller\n{\n    public function index(): JsonResponse\n    {\n        return response()->json([]);\n    }\n}\n");
         }
 
         if (in_array('middleware', $components, true)) {
-            $files->put("{$modulePath}/App/Http/Middleware/{$name}Middleware.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\App\\Http\\Middleware;
-
-use Closure;
-use Illuminate\\Http\\Request;
-use Symfony\\Component\\HttpFoundation\\Response;
-
-class {$name}Middleware
-{
-    public function handle(Request \$request, Closure \$next): Response
-    {
-        return \$next(\$request);
-    }
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/App/Http/Middleware/{$name}Middleware.php", "<?php\n\nnamespace Modules\\{$name}\\App\\Http\\Middleware;\n\nuse Closure;\nuse Illuminate\\Http\\Request;\nuse Symfony\\Component\\HttpFoundation\\Response;\n\nclass {$name}Middleware\n{\n    public function handle(Request \\$request, Closure \\$next): Response\n    {\n        return \\$next(\\$request);\n    }\n}\n");
         }
 
         if (in_array('requests', $components, true)) {
-            $files->put("{$modulePath}/App/Http/Requests/{$name}Request.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\App\\Http\\Requests;
-
-use Illuminate\\Foundation\\Http\\FormRequest;
-
-class {$name}Request extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        return [];
-    }
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/App/Http/Requests/{$name}Request.php", "<?php\n\nnamespace Modules\\{$name}\\App\\Http\\Requests;\n\nuse Illuminate\\Foundation\\Http\\FormRequest;\n\nclass {$name}Request extends FormRequest\n{\n    public function authorize(): bool\n    {\n        return true;\n    }\n\n    public function rules(): array\n    {\n        return [];\n    }\n}\n");
         }
 
         if (in_array('models', $components, true)) {
-            $files->put("{$modulePath}/App/Models/{$name}.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\App\\Models;
-
-use Illuminate\\Database\\Eloquent\\Model;
-
-class {$name} extends Model
-{
-    protected \$guarded = [];
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/App/Models/{$name}.php", "<?php\n\nnamespace Modules\\{$name}\\App\\Models;\n\nuse Illuminate\\Database\\Eloquent\\Model;\n\nclass {$name} extends Model\n{\n    protected \\$guarded = [];\n}\n");
         }
 
         if (in_array('services', $components, true)) {
-            $files->put("{$modulePath}/App/Services/{$name}Service.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\App\\Services;
-
-class {$name}Service
-{
-    // Module business logic belongs here.
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/App/Services/{$name}Service.php", "<?php\n\nnamespace Modules\\{$name}\\App\\Services;\n\nclass {$name}Service\n{\n    // Module business logic belongs here.\n}\n");
         }
 
         if (in_array('factories', $components, true)) {
-            $files->put("{$modulePath}/Database/Factories/{$name}Factory.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\Database\\Factories;
-
-use Illuminate\\Database\\Eloquent\\Factories\\Factory;
-
-class {$name}Factory extends Factory
-{
-    public function definition(): array
-    {
-        return [];
-    }
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/Database/Factories/{$name}Factory.php", "<?php\n\nnamespace Modules\\{$name}\\Database\\Factories;\n\nuse Illuminate\\Database\\Eloquent\\Factories\\Factory;\n\nclass {$name}Factory extends Factory\n{\n    public function definition(): array\n    {\n        return [];\n    }\n}\n");
         }
 
         if (in_array('seeders', $components, true)) {
-            $files->put("{$modulePath}/Database/Seeders/{$name}Seeder.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\Database\\Seeders;
-
-use Illuminate\\Database\\Seeder;
-
-class {$name}Seeder extends Seeder
-{
-    public function run(): void
-    {
-        // Seed module data here.
-    }
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/Database/Seeders/{$name}Seeder.php", "<?php\n\nnamespace Modules\\{$name}\\Database\\Seeders;\n\nuse Illuminate\\Database\\Seeder;\n\nclass {$name}Seeder extends Seeder\n{\n    public function run(): void\n    {\n        // Seed module data here.\n    }\n}\n");
         }
 
         if (in_array('routes', $components, true)) {
             $route = "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n";
-
             if (in_array('controllers', $components, true)) {
                 $route .= "use Modules\\{$name}\\App\\Http\\Controllers\\{$name}Controller;\n\n";
                 $route .= "Route::get('/{$name}', [{$name}Controller::class, 'index']);\n";
             } else {
                 $route .= "\n";
             }
-
             $files->put("{$modulePath}/Routes/api.php", $route);
         }
 
         if (in_array('feature-tests', $components, true)) {
-            $files->put("{$modulePath}/Tests/Feature/{$name}Test.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\Tests\\Feature;
-
-use Tests\\TestCase;
-
-class {$name}Test extends TestCase
-{
-    public function test_module_can_be_loaded(): void
-    {
-        \$this->assertTrue(true);
-    }
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/Tests/Feature/{$name}Test.php", "<?php\n\nnamespace Modules\\{$name}\\Tests\\Feature;\n\nuse Tests\\TestCase;\n\nclass {$name}Test extends TestCase\n{\n    public function test_module_can_be_loaded(): void\n    {\n        \\$this->assertTrue(true);\n    }\n}\n");
         }
 
         if (in_array('unit-tests', $components, true)) {
-            $files->put("{$modulePath}/Tests/Unit/{$name}ServiceTest.php", <<<PHP
-<?php
-
-namespace Modules\\{$name}\\Tests\\Unit;
-
-use PHPUnit\\Framework\\TestCase;
-
-class {$name}ServiceTest extends TestCase
-{
-    public function test_basic_unit_test(): void
-    {
-        \$this->assertTrue(true);
-    }
-}
-PHP
-            . PHP_EOL);
+            $files->put("{$modulePath}/Tests/Unit/{$name}ServiceTest.php", "<?php\n\nnamespace Modules\\{$name}\\Tests\\Unit;\n\nuse PHPUnit\\Framework\\TestCase;\n\nclass {$name}ServiceTest extends TestCase\n{\n    public function test_basic_unit_test(): void\n    {\n        \\$this->assertTrue(true);\n    }\n}\n");
         }
 
-        $files->put(
-            "{$modulePath}/module.json",
-            json_encode([
-                'name' => $name,
-                'namespace' => "Modules\\{$name}",
-                'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
-                'version' => '1.0.0',
-                'description' => "{$name} module",
-                'enabled' => true,
-                'components' => $components,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL
-        );
+        $files->put("{$modulePath}/module.json", json_encode([
+            'name' => $name,
+            'namespace' => "Modules\\{$name}",
+            'provider' => "Modules\\{$name}\\App\\Providers\\{$name}ServiceProvider",
+            'version' => '1.0.0',
+            'description' => "{$name} module",
+            'enabled' => true,
+            'components' => $components,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
 
         $this->info("Module [{$name}] created successfully.");
         $this->line('Components: ' . implode(', ', $components));
         $this->line("Location: Modules/{$name}");
-
         return self::SUCCESS;
     }
 
-    /**
-     * @param array<int, string> $available
-     * @return array<int, string>|null
-     */
+    /** @param array<int, string> $available */
     private function components(array $available): ?array
     {
         $requested = $this->option('components');
@@ -309,36 +139,29 @@ PHP
                 static fn (string $component): string => Str::kebab(trim($component)),
                 $requested
             )));
-
             $invalid = array_diff($requested, $available);
-
             if ($invalid !== []) {
                 $this->error('Unknown component(s): ' . implode(', ', $invalid));
                 $this->line('Available: ' . implode(', ', $available));
                 return null;
             }
-
             return array_values(array_unique($requested));
         }
 
         if ($this->option('minimal') || ! $this->input->isInteractive()) {
-            return [
-                'controllers',
-                'requests',
-                'models',
-                'services',
-                'routes',
-            ];
+            return ['controllers', 'requests', 'models', 'services', 'routes'];
         }
 
         $selected = $this->choice(
             'Which components should be generated?',
-            $available,
+            array_keys($available),
             null,
             null,
             true
         );
 
-        return array_values(array_intersect($available, $selected));
+        return array_values(array_intersect($available, $selected))
+            ? array_values(array_intersect($selected, $available))
+            : [];
     }
 }
