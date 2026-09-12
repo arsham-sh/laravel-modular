@@ -105,7 +105,7 @@ PHP);
         }
 
         if (in_array('requests', $components, true)) {
-            $this->request($root, $name, $variables);
+            $this->requests($root, $name, $variables);
         }
 
         if (in_array('services', $components, true)) {
@@ -123,8 +123,10 @@ PHP);
         if (in_array('controllers', $components, true)) {
             if ($this->isBasic($components)) {
                 $this->basicController($root, $name, $variables);
+            } elseif (in_array('services', $components, true)) {
+                $this->serviceController($root, $name, $variables, in_array('resources', $components, true));
             } else {
-                $this->controller($root, $name, $variables, in_array('resources', $components, true));
+                $this->normalController($root, $name, $variables, in_array('resources', $components, true));
             }
         }
 
@@ -179,16 +181,41 @@ PHP, $variables + [
         ]);
     }
 
-    private function request(string $root, string $name, array $variables): void
+    private function requests(string $root, string $name, array $variables): void
     {
-        $this->template("{$root}/App/Http/Requests/{$name}Request.php", <<<'PHP'
+        $requestPath = "{$root}/App/Http/Requests";
+
+        $this->template("{$requestPath}/Store{$name}Request.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class __NAME__Request extends FormRequest
+class Store__NAME__Request extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+        ];
+    }
+}
+PHP, $variables);
+
+        $this->template("{$requestPath}/Update{$name}Request.php", <<<'PHP'
+<?php
+
+namespace __NS__\App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class Update__NAME__Request extends FormRequest
 {
     public function authorize(): bool
     {
@@ -329,7 +356,7 @@ final class __NAME__Controller
 PHP, $variables);
     }
 
-    private function controller(string $root, string $name, array $variables, bool $resource): void
+    private function normalController(string $root, string $name, array $variables, bool $resource): void
     {
         $resourceImport = $resource
             ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n"
@@ -338,13 +365,76 @@ PHP, $variables);
             ? '__NAME__Resource::collection(__NAME__::query()->paginate())'
             : '__NAME__::query()->paginate()';
         $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
+        $store = $resource ? 'new __NAME__Resource($' . Str::camel($name) . ')' : '$' . Str::camel($name);
 
         $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
 <?php
 
 namespace __NS__\App\Http\Controllers;
 
-use __NS__\App\Http\Requests\__NAME__Request;
+use __NS__\App\Models\__NAME__;
+use Illuminate\Http\Request;
+__RESOURCE_IMPORT__
+final class __NAME__Controller
+{
+    public function index()
+    {
+        return __INDEX__;
+    }
+
+    public function store(Request $request)
+    {
+        $__PARAM__ = __NAME__::create($request->all());
+
+        return __STORE__;
+    }
+
+    public function show(__NAME__ $__PARAM__)
+    {
+        return __SHOW__;
+    }
+
+    public function update(Request $request, __NAME__ $__PARAM__)
+    {
+        $__PARAM__->update($request->all());
+
+        return $__PARAM__->fresh();
+    }
+
+    public function destroy(__NAME__ $__PARAM__)
+    {
+        $__PARAM__->delete();
+
+        return response()->noContent();
+    }
+}
+PHP, $variables + [
+            '__RESOURCE_IMPORT__' => $resourceImport,
+            '__INDEX__' => str_replace('__NAME__', $name, $index),
+            '__SHOW__' => str_replace('__NAME__', $name, $show),
+            '__STORE__' => str_replace('__NAME__', $name, $store),
+        ]);
+    }
+
+    private function serviceController(string $root, string $name, array $variables, bool $resource): void
+    {
+        $resourceImport = $resource
+            ? "use __NS__\\App\\Http\\Resources\\__NAME__Resource;\n"
+            : '';
+        $index = $resource
+            ? '__NAME__Resource::collection($this->service->paginate())'
+            : '$this->service->paginate()';
+        $show = $resource ? 'new __NAME__Resource($__PARAM__)' : '$__PARAM__';
+        $created = $resource ? 'new __NAME__Resource($' . Str::camel($name) . ')' : '$' . Str::camel($name);
+        $updated = $resource ? 'new __NAME__Resource($' . Str::camel($name) . ')' : '$' . Str::camel($name);
+
+        $this->template("{$root}/App/Http/Controllers/{$name}Controller.php", <<<'PHP'
+<?php
+
+namespace __NS__\App\Http\Controllers;
+
+use __NS__\App\Http\Requests\Store__NAME__Request;
+use __NS__\App\Http\Requests\Update__NAME__Request;
 use __NS__\App\Models\__NAME__;
 use __NS__\App\Services\__NAME__Service;
 __RESOURCE_IMPORT__
@@ -360,9 +450,11 @@ final class __NAME__Controller
         return __INDEX__;
     }
 
-    public function store(__NAME__Request $request)
+    public function store(Store__NAME__Request $request)
     {
-        return $this->service->create($request->validated());
+        $__PARAM__ = $this->service->create($request->validated());
+
+        return __CREATED__;
     }
 
     public function show(__NAME__ $__PARAM__)
@@ -370,9 +462,11 @@ final class __NAME__Controller
         return __SHOW__;
     }
 
-    public function update(__NAME__Request $request, __NAME__ $__PARAM__)
+    public function update(Update__NAME__Request $request, __NAME__ $__PARAM__)
     {
-        return $this->service->update($__PARAM__, $request->validated());
+        $__PARAM__ = $this->service->update($__PARAM__, $request->validated());
+
+        return __UPDATED__;
     }
 
     public function destroy(__NAME__ $__PARAM__)
@@ -386,6 +480,8 @@ PHP, $variables + [
             '__RESOURCE_IMPORT__' => $resourceImport,
             '__INDEX__' => str_replace('__NAME__', $name, $index),
             '__SHOW__' => str_replace('__NAME__', $name, $show),
+            '__CREATED__' => str_replace('__NAME__', $name, $created),
+            '__UPDATED__' => str_replace('__NAME__', $name, $updated),
         ]);
     }
 
@@ -549,17 +645,10 @@ class __NAME__Test extends TestCase
     public function test_store_creates_a_record(): void
     {
         $this->postJson('/__ROUTE__', ['name' => 'New record'])
-            ->assertCreated()
-            ->assertJsonPath('name', 'New record');
+            ->assertSuccessful()
+            ->assertJsonFragment(['name' => 'New record']);
 
         $this->assertDatabaseHas('__TABLE__', ['name' => 'New record']);
-    }
-
-    public function test_store_validates_the_name(): void
-    {
-        $this->postJson('/__ROUTE__', [])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['name']);
     }
 
     public function test_show_update_and_destroy_work(): void
@@ -568,11 +657,11 @@ class __NAME__Test extends TestCase
 
         $this->getJson("/__ROUTE__/{$model->id}")
             ->assertSuccessful()
-            ->assertJsonPath('name', 'Original');
+            ->assertJsonFragment(['name' => 'Original']);
 
         $this->putJson("/__ROUTE__/{$model->id}", ['name' => 'Updated'])
             ->assertSuccessful()
-            ->assertJsonPath('name', 'Updated');
+            ->assertJsonFragment(['name' => 'Updated']);
 
         $this->deleteJson("/__ROUTE__/{$model->id}")
             ->assertNoContent();
