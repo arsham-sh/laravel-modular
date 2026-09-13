@@ -5,7 +5,9 @@ namespace Arsham\LaravelModular\Console;
 use Arsham\LaravelModular\Generators\ModuleComponents;
 use Arsham\LaravelModular\Generators\ModuleGenerator;
 use Arsham\LaravelModular\Generators\ModulePreset;
+use Arsham\LaravelModular\Support\ModuleApplicationSupport;
 use Illuminate\Console\Command;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
 class MakeModuleCommand extends Command
@@ -19,21 +21,32 @@ class MakeModuleCommand extends Command
 
     protected $description = 'Create a Laravel module';
 
-    public function handle(ModuleGenerator $generator): int
-    {
+    public function handle(
+        ModuleGenerator $generator,
+        ModuleApplicationSupport $support,
+        Filesystem $files,
+    ): int {
         $components = $this->resolveComponents();
         if ($components === null) {
             return self::FAILURE;
         }
 
+        $module = Str::studly($this->argument('name'));
+        $sharedRoot = base_path('Modules/Shared');
+        $sharedRootExisted = $files->isDirectory($sharedRoot);
+
         try {
-            $generator->generate($this->argument('name'), $components);
+            $support->prepare();
+            $generator->generate($module, $components);
+            $support->updateModuleControllers($module);
+            $support->removeGeneratedSharedSupport($sharedRootExisted);
         } catch (\Throwable $e) {
+            $support->removeGeneratedSharedSupport($sharedRootExisted);
             $this->error($e->getMessage());
             return self::FAILURE;
         }
 
-        $this->info('Module [' . Str::studly($this->argument('name')) . '] created successfully.');
+        $this->info('Module [' . $module . '] created successfully.');
         return self::SUCCESS;
     }
 

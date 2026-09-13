@@ -2,6 +2,7 @@
 
 namespace Arsham\LaravelModular\Console;
 
+use Arsham\LaravelModular\Support\ModuleApplicationSupport;
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -15,7 +16,7 @@ class MakeModuleControllerCommand extends Command
 
     protected $description = 'Create a controller inside an existing Laravel module';
 
-    public function handle(Filesystem $files): int
+    public function handle(Filesystem $files, ModuleApplicationSupport $support): int
     {
         $module = Str::studly($this->argument('module'));
         $name = Str::studly($this->argument('name'));
@@ -36,8 +37,9 @@ class MakeModuleControllerCommand extends Command
         }
 
         $files->makeDirectory($directory, 0755, true);
+        $support->prepare();
         $this->writeController($files, $path, $namespace, $name);
-        $this->writeResponsesTrait($files);
+        $support->updateModuleControllers($module);
 
         $this->info("Controller [{$name}Controller] created in module [{$module}].");
         return self::SUCCESS;
@@ -87,7 +89,7 @@ PHP;
 
 namespace __NS__\App\Http\Controllers;
 
-__IMPORTS__use Modules\Shared\App\Traits\HttpResponses;
+__IMPORTS__use App\Traits\HttpResponses;
 
 class __NAME__Controller
 {
@@ -104,58 +106,5 @@ PHP
         ]);
 
         $files->put($path, $content);
-    }
-
-    private function writeResponsesTrait(Filesystem $files): void
-    {
-        $root = base_path('Modules/Shared');
-        $path = "{$root}/App/Traits/HttpResponses.php";
-
-        if ($files->exists($path)) {
-            return;
-        }
-
-        $files->makeDirectory(dirname($path), 0755, true);
-        $files->put($path, <<<'PHP'
-<?php
-
-namespace Modules\Shared\App\Traits;
-
-use Illuminate\Http\JsonResponse;
-
-trait HttpResponses
-{
-    protected function success(mixed $data = null, ?string $message = null, int $code = 200): JsonResponse
-    {
-        return response()->json([
-            'status' => 'success',
-            'message' => $message,
-            'data' => $data,
-        ], $code);
-    }
-
-    protected function error(mixed $data = null, ?string $message = null, int $code = 500): JsonResponse
-    {
-        return response()->json([
-            'status' => 'error',
-            'message' => $message,
-            'data' => $data,
-        ], $code);
-    }
-}
-PHP);
-
-        $moduleJson = "{$root}/module.json";
-        if (! $files->exists($moduleJson)) {
-            $files->put($moduleJson, json_encode([
-                'name' => 'Shared',
-                'namespace' => 'Modules\\Shared',
-                'provider' => null,
-                'version' => '1.0.0',
-                'description' => 'Shared module support',
-                'enabled' => true,
-                'components' => ['traits'],
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
-        }
     }
 }
